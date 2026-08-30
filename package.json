@@ -2,11 +2,16 @@
   "name": "movie-recommendation-page",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "build:dataset": "node --env-file=.env scripts/build-dataset.mjs",
+    "eval": "node scripts/eval-recommender.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
@@ -62,6 +67,7 @@
     "@types/react-dom": "latest"
   },
   "devDependencies": {
+    "csv-parse": "^5.6.0",
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",

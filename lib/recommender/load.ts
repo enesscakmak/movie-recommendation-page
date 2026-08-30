@@ -3,7 +3,7 @@ import type { CatalogMovie, DatasetMeta, RatingsMatrix } from "./types"
 const MAGIC = "MRC1"
 
 /** Wire form of catalog.json - short keys, because it ships to every visitor. */
-interface RawCatalogMovie {
+export interface RawCatalogMovie {
   i: number
   m: number
   t: string
@@ -16,6 +16,11 @@ interface RawCatalogMovie {
   o: string
   n: number
   a: number
+}
+
+/** Exported so the offline eval harness can read catalog.json off disk. */
+export function expandCatalog(raw: { movies: RawCatalogMovie[] }): CatalogMovie[] {
+  return raw.movies.map(expand)
 }
 
 function expand(r: RawCatalogMovie): CatalogMovie {
@@ -61,7 +66,7 @@ export function decodeMatrix(ab: ArrayBuffer): RatingsMatrix {
   const indexOfMovieId = new Map<number, number>()
   for (let i = 0; i < movieCount; i++) indexOfMovieId.set(movieIds[i], i)
 
-  return { userCount, movieCount, movieIds, userIds, fullNorm, userMean, rowPtr, colIdx, values, indexOfMovieId }
+  return { userCount, movieCount, nnz, movieIds, userIds, fullNorm, userMean, rowPtr, colIdx, values, indexOfMovieId }
 }
 
 // Module-level memoisation: every caller shares one fetch and one decode.
@@ -81,9 +86,7 @@ export function loadMeta(): Promise<DatasetMeta> {
 }
 
 export function loadCatalog(): Promise<CatalogMovie[]> {
-  catalogPromise ??= fetchJson<{ movies: RawCatalogMovie[] }>("/data/catalog.json").then((d) =>
-    d.movies.map(expand),
-  )
+  catalogPromise ??= fetchJson<{ movies: RawCatalogMovie[] }>("/data/catalog.json").then(expandCatalog)
   return catalogPromise
 }
 

@@ -23,6 +23,8 @@ export interface CatalogMovie {
 export interface RatingsMatrix {
   userCount: number
   movieCount: number
+  /** Number of stored ratings. */
+  nnz: number
   /** Catalogue index -> MovieLens movieId. */
   movieIds: Uint32Array
   userIds: Int32Array

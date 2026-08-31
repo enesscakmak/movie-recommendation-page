@@ -1,19 +1,9 @@
-// Build-time TMDB lookups.
-//
-// This runs once, on a developer machine, and its output is baked into
-// public/data/catalog.json. The shipped app never talks to TMDB and never
-// carries the API key.
-//
-// Every response is written to scripts/.cache/tmdb/<tmdbId>.json before it is
-// used, which makes the script idempotent and interruptible - a run that dies
-// halfway resumes for free.
 
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs"
 import { join } from "node:path"
 
 const BASE = "https://api.themoviedb.org/3"
 
-/** TMDB tolerates a good deal more, but 8 in flight is polite and finishes ~1800 lookups in well under a minute. */
 const CONCURRENCY = 8
 const STAGGER_MS = 25
 const MAX_RETRIES = 4
@@ -24,8 +14,6 @@ export function cachePathFor(cacheDir, tmdbId) {
   return join(cacheDir, `${tmdbId}.json`)
 }
 
-// v4 read-access tokens are JWTs (two dots) and go in an Authorization header;
-// v3 keys are a bare 32-char hex string and go in the query string.
 const isV4Token = (apiKey) => apiKey.includes(".")
 
 async function fetchOne(tmdbId, apiKey) {
@@ -45,7 +33,6 @@ async function fetchOne(tmdbId, apiKey) {
 
     if (res.ok) return await res.json()
 
-    // A 404 is a real answer: the TMDB entry was deleted. Don't retry it.
     if (res.status === 404) return { __missing: true, status: 404 }
 
     if (res.status === 429 || res.status >= 500) {
@@ -60,13 +47,6 @@ async function fetchOne(tmdbId, apiKey) {
   return { __missing: true, status: 0 }
 }
 
-/**
- * Resolve TMDB details for a list of ids, using and filling the on-disk cache.
- *
- * @param {(number|null)[]} tmdbIds
- * @param {object} opts
- * @returns {Promise<{details: Map<number, {posterPath: string|null, overview: string}>, fetched: number, cached: number}>}
- */
 export async function fetchDetails(tmdbIds, { apiKey, cacheDir, refresh = false, onProgress } = {}) {
   mkdirSync(cacheDir, { recursive: true })
 
@@ -95,7 +75,6 @@ export async function fetchDetails(tmdbIds, { apiKey, cacheDir, refresh = false,
       if (data === undefined) {
         if (!apiKey) throw new Error("TMDB_API_KEY is not set and the cache is incomplete")
         data = await fetchOne(id, apiKey)
-        // Write before use, so an interrupted run still banks the work.
         writeFileSync(path, JSON.stringify(data))
         fetched++
       }
@@ -105,8 +84,6 @@ export async function fetchDetails(tmdbIds, { apiKey, cacheDir, refresh = false,
         data.__missing
           ? { posterPath: null, overview: "" }
           : {
-              // Store the bare path, not a full URL: the poster size stays a
-              // rendering decision rather than something baked into the data.
               posterPath: data.poster_path ?? null,
               overview: typeof data.overview === "string" ? data.overview : "",
             },

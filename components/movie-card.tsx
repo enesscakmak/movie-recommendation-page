@@ -14,11 +14,9 @@ import { posterUrl, imdbUrl, useOverview, loadCatalog, loadNeighborTable, simila
 
 interface MovieCardProps {
   movie: CatalogMovie
-  /** Star rating this profile gave it, if any. */
   userRating?: number
   onRate?: (rating: number) => void
   onSkip?: () => void
-  /** movieIds of the visitor's own rated films that produced this recommendation. */
   because?: string[]
 }
 
@@ -109,13 +107,6 @@ export default function MovieCard({ movie, userRating, onRate, onSkip, because }
   )
 }
 
-/**
- * Reads the same item-item neighbour table the personalised feed uses, just
- * indexed by one film instead of a visitor's ratings - see `similarTo`.
- * Catalog and neighbours are only fetched once the dialog actually mounts;
- * both loaders are memoised so a visitor who already personalised pays
- * nothing extra here.
- */
 function SimilarMovies({ movie }: { movie: CatalogMovie }) {
   const { profile, rateMovie, skipMovie } = useProfile()
   const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)

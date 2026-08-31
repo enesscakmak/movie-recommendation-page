@@ -35,7 +35,6 @@ export function MovieSearch({ catalog, onMovieSelect, ratedIds }: MovieSearchPro
       else if (title.includes(q)) score = 50
       else if (m.altTitles.some((a) => a.toLowerCase().includes(q))) score = 30
       if (score < 0) continue
-      // Popularity as a tiebreaker within the same match tier.
       scored.push([m, score + Math.min(m.ratingCount, 5000) / 5000])
     }
     scored.sort((a, b) => b[1] - a[1])

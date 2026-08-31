@@ -1,46 +1,13 @@
-// Item-item similarity, trained offline on the FULL rating population (not
-// just the shipped catalogue).
-//
-// Two movies are similar when the same people tend to rate both of them
-// highly - not because a genre tag says so, but because real co-liking
-// behaviour said so. That's what makes this "collaborative": no metadata
-// about the films themselves ever enters the computation.
-//
-//   sim(i, j) = cooc(i, j) / (likeCount(i)^(1-a) * likeCount(j)^a + shrink)
-//
-// cooc(i, j) counts users who liked both. The denominator is a shrunk,
-// asymmetric-cosine-style normaliser: without `shrink`, two obscure films
-// that happen to share their only three likers would score a perfect 1.0,
-// crowding out a pair backed by thousands of co-likers. Parameters
-// (k=20, alpha=0.5, shrink=20, LIKE_THRESHOLD=4.0) were chosen by sweeping
-// recall@10 on a held-out split - see HANDOFF/README for the numbers.
-//
-// The computation happens once, offline, over all ~33M ratings. Only the
-// resulting top-K lists ship to the browser (see encode.mjs) - the training
-// data itself never does.
 
 import { streamRatings } from "./movielens.mjs"
 
 export const LIKE_THRESHOLD = 4.0
-// Caps a "rated everything" power user's cost at CAP^2 pairs instead of
-// unboundedly quadratic; first-CAP-encountered is an acceptable sample since
-// MovieLens exports are close to chronological per user.
 const CAP_PER_USER = 300
 
-/**
- * @param {string} dir - directory containing ratings.csv
- * @param {Map<number, number>} colOfMovieId - MovieLens movieId -> compact
- *   engine index (0..engineCount-1), containing ONLY engine-eligible movies
- * @param {number} engineCount
- * @param {{k?: number, alpha?: number, shrink?: number, onProgress?: (rows:number)=>void}} [opts]
- */
 export async function buildNeighborTable(dir, colOfMovieId, engineCount, opts = {}) {
   const { k = 20, alpha = 0.5, shrink = 20, onProgress } = opts
   const E = engineCount
 
-  // Per-user liked lists, engine-eligible movies only, capped. Plain arrays
-  // in a Map: MovieLens ids are small but not dense, and this only needs to
-  // survive one streaming pass, not be queried afterward.
   const likedByUser = new Map()
   let rows = 0
   for await (const { userId, movieId, rating } of streamRatings(dir)) {

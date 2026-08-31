@@ -1,31 +1,19 @@
-// Storage schema for local profiles.
-//
-// The Java original kept accounts in a users.json next to the app. This is the
-// honest web equivalent: everything lives in this one browser, and the UI says
-// so out loud. There is no server and nothing to sign in to.
 
 export const STORAGE_KEY = "moviemind.db"
 export const SCHEMA_VERSION = 1
 
-/** The key the v0 scaffold's mock auth left behind. Removed on migration. */
 export const LEGACY_MOCK_KEY = "user"
 
 export interface StoredProfile {
   id: string
-  /** Unique within this browser; compared case-insensitively. */
   username: string
   displayName: string
-  /** Both null when the profile has no password, which is the default. */
   salt: string | null
   passwordHash: string | null
   createdAt: string
-  /** movieId -> 0.5..5 */
   ratings: Record<string, number>
-  /** movieId -> ISO timestamp */
   ratedAt: Record<string, string>
-  /** "Haven't seen it" - excluded from recommendations, like the original's DNW. */
   skipped: number[]
-  /** Which page of the ranking the Refresh button is showing. */
   recommendationOffset: number
 }
 
@@ -65,13 +53,6 @@ function isProfile(v: unknown): v is StoredProfile {
   return typeof p.id === "string" && typeof p.username === "string"
 }
 
-/**
- * Bring stored data up to the current schema.
- *
- * An unreadable or newer-than-expected payload is set aside rather than thrown
- * away silently and rather than crashing the app: a visitor with a corrupt
- * localStorage should still get a working page.
- */
 export function migrate(raw: unknown, onBackup?: (payload: string) => void): StoredDb {
   if (typeof raw !== "object" || raw === null) return emptyDb()
   const db = raw as Partial<StoredDb>

@@ -3,11 +3,6 @@ import type { CatalogMovie, DatasetMeta, ItemNeighbors } from "./types"
 
 const MAGIC = "MIN1"
 
-/**
- * Wire form of catalog.json - short keys, because it ships to every visitor.
- * Overview text lives separately in overviews.json (see loadOverviews) so
- * this index stays small enough to fetch before first paint.
- */
 export interface RawCatalogMovie {
   i: number
   m: number
@@ -22,7 +17,6 @@ export interface RawCatalogMovie {
   a: number
 }
 
-/** Exported so the offline eval harness can read catalog.json off disk. */
 export function expandCatalog(raw: { movies: RawCatalogMovie[] }): CatalogMovie[] {
   return raw.movies.map(expand)
 }
@@ -43,11 +37,6 @@ function expand(r: RawCatalogMovie): CatalogMovie {
   }
 }
 
-/**
- * Decode itemnb.bin into typed-array views over the downloaded buffer.
- * Nothing is copied and nothing is parsed - the views point straight into the
- * ArrayBuffer. See scripts/lib/encode.mjs for the layout.
- */
 export function decodeNeighborTable(ab: ArrayBuffer): ItemNeighbors {
   const dv = new DataView(ab)
   const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3))
@@ -63,7 +52,6 @@ export function decodeNeighborTable(ab: ArrayBuffer): ItemNeighbors {
   return { movieCount, k, neighborIdx, neighborSim }
 }
 
-// Module-level memoisation: every caller shares one fetch and one decode.
 let catalogPromise: Promise<CatalogMovie[]> | null = null
 let metaPromise: Promise<DatasetMeta> | null = null
 let neighborsPromise: Promise<ItemNeighbors> | null = null
@@ -85,11 +73,6 @@ export function loadCatalog(): Promise<CatalogMovie[]> {
   return catalogPromise
 }
 
-/**
- * The item-item neighbour table, fetched lazily. Callers must not reach for
- * this until the visitor actually has enough ratings to personalise - it is
- * a couple hundred KB that most visitors never need on first paint.
- */
 export function loadNeighborTable(): Promise<ItemNeighbors> {
   neighborsPromise ??= (async () => {
     const meta = await loadMeta()
@@ -100,17 +83,11 @@ export function loadNeighborTable(): Promise<ItemNeighbors> {
   return neighborsPromise
 }
 
-/**
- * Overview text, aligned by catalogue index to overviews.json. Not needed
- * until a card actually renders one, so it is never part of loadCatalog -
- * fetch it only once something on screen wants it (see useOverview).
- */
 export function loadOverviews(): Promise<string[]> {
   overviewsPromise ??= fetchJson<string[]>("/data/overviews.json")
   return overviewsPromise
 }
 
-/** A movie's overview text, fetched lazily and filled in once it arrives. */
 export function useOverview(index: number): string {
   const [overview, setOverview] = useState("")
 
@@ -131,7 +108,6 @@ export function posterUrl(posterPath: string | null, size: "w185" | "w342" | "w5
   return posterPath ? `https://image.tmdb.org/t/p/${size}${posterPath}` : null
 }
 
-/** IMDb ids are zero-padded strings; rebuilding the URL must not lose that. */
 export function imdbUrl(imdbId: string): string {
   return `https://www.imdb.com/title/tt${String(imdbId).padStart(7, "0")}/`
 }

@@ -1,12 +1,3 @@
-// Offline checks on the recommender. Run with `pnpm eval`.
-//
-// Deliberately not a test framework: a handful of checks against committed
-// data don't justify pulling vitest into a static site. This exits non-zero
-// on failure so it still works in CI.
-//
-// Unlike the shipped app, this script has access to the raw ratings.csv (it
-// runs on a dev machine, not in a browser) - sections 2-4 use that to build
-// independent test data the shipped artifact never carries.
 
 import { readFileSync, existsSync } from "node:fs"
 import { join, dirname } from "node:path"
@@ -44,7 +35,6 @@ function load(): { catalog: CatalogMovie[]; nb: ItemNeighbors; meta: DatasetMeta
   return { catalog, nb: decodeNeighborTable(ab as ArrayBuffer), meta }
 }
 
-/** Deterministic PRNG, so a failing run reproduces. */
 function mulberry32(seed: number) {
   return () => {
     seed |= 0
@@ -55,15 +45,6 @@ function mulberry32(seed: number) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 1. Golden test: pick a handful of well-known movies and recompute their
-//    neighbour lists from scratch, straight off ratings.csv, with a small
-//    independent implementation. This is the check that catches "the build
-//    script has a bug that also fooled its own self-check" - re-deriving the
-//    same numbers a second, differently-written way is the only thing that
-//    actually verifies the shipped artifact is correct rather than merely
-//    internally consistent.
-// ---------------------------------------------------------------------------
 async function goldenTest(catalog: CatalogMovie[], nb: ItemNeighbors, meta: DatasetMeta) {
   console.log("\n1. Golden test (shipped neighbours vs from-scratch recomputation)")
 
@@ -80,10 +61,6 @@ async function goldenTest(catalog: CatalogMovie[], nb: ItemNeighbors, meta: Data
   const cooc = new Map<number, Map<number, number>>() // target col -> (other col -> count)
   for (const c of targetCols) cooc.set(c, new Map())
 
-  // Pass 1: like-counts (needed for the similarity formula's denominator).
-  // Pass 2: per-user liked lists, capped like the real build - ratings.csv
-  // is not guaranteed sorted by user, so this groups with a Map rather than
-  // assuming order.
   let rows = 0
   for await (const { movieId, rating } of streamRatings(RAW_DIR)) {
     rows++
@@ -140,14 +117,8 @@ async function goldenTest(catalog: CatalogMovie[], nb: ItemNeighbors, meta: Data
   ok("ratings.csv still has the expected row count", rows === EXPECTED_RATINGS, `${fmtN(rows)} rows`)
 }
 
-// ---------------------------------------------------------------------------
-// 2. Hold-out: item-item must beat popularity, not merely beat random.
-//    Test users are sampled fresh from ratings.csv - the shipped app never
-//    carries MovieLens users' histories, so this data exists only here.
-// ---------------------------------------------------------------------------
 async function sampleTestUsers(catalog: CatalogMovie[], count: number) {
   const colOfMovieId = new Map(catalog.map((m) => [m.movieId, m.index]))
-  // streamRatings() yields the raw 0.5..5.0 star value, not a doubled/quantised one.
   const byUser = new Map<number, Array<[number, number]>>() // userId -> [movieId, rating][]
   for await (const { userId, movieId, rating } of streamRatings(RAW_DIR)) {
     if (userId % 40 !== 0) continue // subsample the population, not the per-user history
@@ -160,8 +131,6 @@ async function sampleTestUsers(catalog: CatalogMovie[], count: number) {
   const rnd = mulberry32(7)
   const picked: Array<{ userId: number; visible: UserRating[]; hidden: Set<number> }> = []
   const seen = new Set<number>()
-  // Bounded rather than "while count unmet": if too few eligible users clear
-  // a nonempty hidden set, looping forever beats returning a smaller sample.
   const maxAttempts = eligible.length * 5
   for (let attempt = 0; picked.length < count && attempt < maxAttempts; attempt++) {
     const [userId, items] = eligible[Math.floor(rnd() * eligible.length)]
@@ -208,10 +177,6 @@ async function holdOut(catalog: CatalogMovie[], nb: ItemNeighbors, meta: Dataset
   return users
 }
 
-// ---------------------------------------------------------------------------
-// 3. Diversity: MMR re-ranking should measurably reduce redundancy among the
-//    top 10 without meaningfully hurting recall.
-// ---------------------------------------------------------------------------
 function diversityCheck(catalog: CatalogMovie[], nb: ItemNeighbors, meta: DatasetMeta, users: Array<{ visible: UserRating[]; hidden: Set<number> }>) {
   console.log("\n3. Diversity re-rank (MMR vs plain relevance ranking)")
 
@@ -240,9 +205,51 @@ function diversityCheck(catalog: CatalogMovie[], nb: ItemNeighbors, meta: Datase
   ok("MMR does not meaningfully hurt recall", recallDiverse > recallPlain * 0.9, `${recallDiverse.toFixed(4)} vs ${recallPlain.toFixed(4)}`)
 }
 
-// ---------------------------------------------------------------------------
-// 4. Genre coherence - the check you'd also run by hand in the UI.
-// ---------------------------------------------------------------------------
+function negativeSignalRecall(catalog: CatalogMovie[], nb: ItemNeighbors, meta: DatasetMeta, users: Array<{ visible: UserRating[]; hidden: Set<number> }>) {
+  console.log("\n3b. Negative ratings vs recall (dislike signal on vs off, same hold-out users)")
+
+  const recallOf = (fn: (visible: UserRating[]) => number[]) =>
+    users.reduce((t, u) => t + fn(u.visible).filter((id) => u.hidden.has(id)).length / Math.min(10, u.hidden.size), 0) / users.length
+
+  const withDislikes = recallOf((visible) => recommend(visible, [], nb, catalog, { minRatingCount: meta.recommendableMinRatings }).map((r) => r.movieId))
+  const withoutDislikes = recallOf((visible) => recommend(visible, [], nb, catalog, { minRatingCount: meta.recommendableMinRatings, dislikeThreshold: 0 }).map((r) => r.movieId))
+
+  console.log(`     recall@10 with dislike signal     = ${withDislikes.toFixed(4)}`)
+  console.log(`     recall@10 ignoring dislikes (old)  = ${withoutDislikes.toFixed(4)}`)
+  ok("modelling dislikes as negative signal does not hurt recall", withDislikes >= withoutDislikes * 0.97, `${withDislikes.toFixed(4)} vs ${withoutDislikes.toFixed(4)}`)
+}
+
+function dislikeDemotion(catalog: CatalogMovie[], nb: ItemNeighbors, meta: DatasetMeta) {
+  console.log("\n3c. Disliking a film demotes its close neighbours")
+
+  const find = (title: string) =>
+    catalog.find((c) => c.title.toLowerCase() === title.toLowerCase()) ??
+    catalog.find((c) => c.title.toLowerCase().includes(title.toLowerCase()))
+
+  const liked = ["The Matrix", "Blade Runner", "Alien", "Terminator 2", "Interstellar"].map(find).filter(Boolean) as CatalogMovie[]
+  if (liked.length < 3) { console.log("     SKIP - seed titles not found in catalogue"); return }
+
+  const likedRatings: UserRating[] = liked.map((m) => ({ movieId: m.movieId, rating: 5, ratedAt: "" }))
+  const baseline = recommend(likedRatings, [], nb, catalog, { count: 10, minRatingCount: meta.recommendableMinRatings, diversity: 0 })
+  if (baseline.length === 0) { console.log("     SKIP - no baseline recommendations"); return }
+
+  const target = catalog.find((c) => c.movieId === baseline[0].movieId)!
+  const avgSimToTarget = (ids: number[]) => {
+    const cols = ids.filter((id) => id !== target.movieId).map((id) => catalog.find((m) => m.movieId === id)?.index).filter((c): c is number => c !== undefined)
+    if (cols.length === 0) return 0
+    return cols.reduce((s, c) => s + itemSimilarity(nb, c, target.index), 0) / cols.length
+  }
+  const baselineSim = avgSimToTarget(baseline.map((r) => r.movieId))
+
+  const withDislike: UserRating[] = [...likedRatings, { movieId: target.movieId, rating: 1, ratedAt: "" }]
+  const after = recommend(withDislike, [], nb, catalog, { count: 10, minRatingCount: meta.recommendableMinRatings, diversity: 0 })
+  const afterSim = avgSimToTarget(after.map((r) => r.movieId))
+
+  console.log(`     disliking "${target.title}": avg similarity of top-10 to it ${baselineSim.toFixed(4)} -> ${afterSim.toFixed(4)}`)
+  ok("disliking a film demotes its close neighbours", afterSim < baselineSim, `${afterSim.toFixed(4)} vs ${baselineSim.toFixed(4)}`)
+  ok("the disliked film itself never reappears", !after.some((r) => r.movieId === target.movieId))
+}
+
 function genreCoherence(catalog: CatalogMovie[], nb: ItemNeighbors, meta: DatasetMeta) {
   console.log("\n4. Genre coherence")
 
@@ -273,17 +280,17 @@ function genreCoherence(catalog: CatalogMovie[], nb: ItemNeighbors, meta: Datase
   run(["Sleepless in Seattle", "Notting Hill", "Pretty Woman", "Four Weddings", "You've Got Mail"], ["Romance", "Comedy"], "romcom profile")
 }
 
-// ---------------------------------------------------------------------------
-// 5. Degenerate inputs must not crash or produce nonsense.
-// ---------------------------------------------------------------------------
 function degenerate(catalog: CatalogMovie[], nb: ItemNeighbors, meta: DatasetMeta) {
   console.log("\n5. Degenerate cases")
 
   ok("no ratings returns nothing", recommend([], [], nb, catalog).length === 0)
 
-  const lowRated = catalog.slice(0, 5).map((mv) => ({ movieId: mv.movieId, rating: 0.5, ratedAt: "" }))
-  ok("below-threshold ratings contribute no signal", !hasUsableNeighbors(lowRated, nb, catalog))
-  ok("below-threshold ratings recommend nothing", recommend(lowRated, [], nb, catalog).length === 0)
+  const neutralRated = catalog.slice(0, 5).map((mv) => ({ movieId: mv.movieId, rating: 3, ratedAt: "" }))
+  ok("neutral-zone ratings contribute no signal", !hasUsableNeighbors(neutralRated, nb, catalog))
+  ok("neutral-zone ratings recommend nothing", recommend(neutralRated, [], nb, catalog).length === 0)
+
+  const allDisliked = catalog.slice(0, 5).map((mv) => ({ movieId: mv.movieId, rating: 1, ratedAt: "" }))
+  ok("all-dislike ratings recommend nothing (no positive evidence)", recommend(allDisliked, [], nb, catalog).length === 0)
 
   const engineMovies = catalog.filter((m) => m.ratingCount >= meta.recommendableMinRatings)
   const everything = catalog.map((mv) => ({ movieId: mv.movieId, rating: 4.5, ratedAt: "" }))
@@ -332,6 +339,8 @@ async function main() {
 
   await goldenTest(catalog, nb, meta)
   const users = await holdOut(catalog, nb, meta)
+  negativeSignalRecall(catalog, nb, meta, users)
+  dislikeDemotion(catalog, nb, meta)
   diversityCheck(catalog, nb, meta, users)
   genreCoherence(catalog, nb, meta)
   degenerate(catalog, nb, meta)

@@ -1,22 +1,7 @@
 import type { CatalogMovie } from "./types"
 
-/**
- * Bayesian-mean popularity, used before a visitor has rated enough to
- * personalise anything.
- *
- *   score = (C·m + Σr) / (C + n)
- *
- * where m is the global mean and C is the weight given to it. A film with four
- * ratings averaging 5.0 gets pulled back toward the global mean; a film with
- * four hundred barely moves. Without this, the top of the list is whatever
- * obscure title happened to get three enthusiastic ratings.
- */
 const PRIOR_WEIGHT = 50
 
-// The full ranking only depends on (catalog, minRatings), both of which are
-// stable for the lifetime of a page load - the catalogue is fetched once and
-// never mutated. Recomputing a sort over the whole catalogue on every
-// Refresh click is wasted work; cache the ranked order and only re-slice.
 let cacheCatalog: CatalogMovie[] | null = null
 let cacheMinRatings = -1
 let cacheRanked: CatalogMovie[] = []

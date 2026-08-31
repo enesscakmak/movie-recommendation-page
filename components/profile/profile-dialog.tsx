@@ -15,12 +15,6 @@ interface ProfileDialogProps {
   defaultTab?: "switch" | "new"
 }
 
-/**
- * There is no server and nothing to sign in to - every profile here lives
- * only in this browser's localStorage. This dialog covers both picking an
- * existing profile and creating a new one, since the distinction is much
- * lower-stakes than real authentication.
- */
 export function ProfileDialog({ isOpen, onClose, defaultTab = "switch" }: ProfileDialogProps) {
   const { profiles, signIn, createProfile } = useProfile()
   const [tab, setTab] = useState<"switch" | "new">(defaultTab)

@@ -4,7 +4,6 @@ import { useState } from "react"
 import { Star } from "lucide-react"
 
 interface StarRatingProps {
-  /** 0.5 .. max, in half-star steps. 0 means unrated. */
   value?: number
   max?: number
   size?: "sm" | "md" | "lg"
@@ -14,11 +13,6 @@ interface StarRatingProps {
 
 const SIZE_PX = { sm: 16, md: 24, lg: 32 }
 
-/**
- * Half-star input: the left half of a star's hit area rounds down to X.5,
- * the right half rounds up to X.0 - matching the 0.5..5 rating scale the
- * data model (and the original Java app) actually uses.
- */
 export function StarRating({ value = 0, max = 5, size = "md", onChange, readOnly = false }: StarRatingProps) {
   const [hover, setHover] = useState<number | null>(null)
   const px = SIZE_PX[size]

@@ -17,7 +17,6 @@ export interface ProfileSummary {
 interface ProfileContextValue {
   profile: StoredProfile | null
   profiles: ProfileSummary[]
-  /** True until localStorage has been read. Never branch on `profile` before this clears. */
   isLoading: boolean
   createProfile: (input: { displayName: string; username: string; password?: string }) => Promise<void>
   signIn: (username: string, password?: string) => Promise<void>
@@ -39,13 +38,8 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const [db, setDb] = useState<StoredDb>(emptyDb)
   const [isLoading, setIsLoading] = useState(true)
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // Mirrors `db` so the async paths (hashing a password, then writing) read
-  // current state rather than whatever was captured when they were created.
   const dbRef = useRef<StoredDb>(db)
 
-  // localStorage is read here rather than during render. The prerendered HTML
-  // has no profile and the client does; branching on that during the first
-  // render pass is a hydration mismatch under static export.
   useEffect(() => {
     const loaded = readDbSync()
     dbRef.current = loaded
@@ -53,7 +47,6 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     setIsLoading(false)
   }, [])
 
-  /** Apply an update and schedule a debounced write - the star widget fires on every click. */
   const commit = useCallback((fn: (current: StoredDb) => StoredDb) => {
     const next = fn(dbRef.current)
     if (next === dbRef.current) return
@@ -63,7 +56,6 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     saveTimer.current = setTimeout(() => void saveDb(next), SAVE_DEBOUNCE_MS)
   }, [])
 
-  // Flush any pending write on unmount rather than losing the last rating.
   useEffect(
     () => () => {
       if (saveTimer.current) {
@@ -149,7 +141,6 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
           delete ratings[movieId]
           delete ratedAt[movieId]
         }
-        // Any change to the ratings invalidates the current page of results.
         return { ...p, ratings, ratedAt, skipped: p.skipped.filter((id) => id !== movieId), recommendationOffset: 0 }
       })
     },

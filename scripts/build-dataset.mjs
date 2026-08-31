@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-//
-// Turns the raw MovieLens ml-32m CSVs into the two files the app ships:
-// public/data/catalog.json and public/data/itemnb.<hash>.bin.
-//
-//   pnpm build:dataset            # uses scripts/.cache/tmdb where possible
-//   pnpm build:dataset -- --refresh   # ignore the TMDB cache
-//   pnpm build:dataset -- --no-tmdb   # skip posters entirely (offline)
-//
-// Run it once and commit the output. It is deliberately NOT part of `next
-// build`: the dataset never changes, and a network fetch (TMDB) or a 900 MB
-// CSV read in CI is a failure mode with no upside.
-//
-// This streams ratings.csv rather than parsing it whole - see movielens.mjs
-// for why - and trains the recommender's item-item neighbour table on the
-// FULL 33M-rating population before filtering down to what ships. Only the
-// trained top-K lists leave this machine; the training data never does.
 
 import { createHash } from "node:crypto"
 import { gzipSync } from "node:zlib"
@@ -83,7 +67,6 @@ async function main() {
     console.log(`  >= ${String(atLeast).padStart(3)} ratings: ${String(fmt(n)).padStart(6)} movies`)
   }
 
-  // ---- catalogue -----------------------------------------------------------
   const catalog = buildCatalog(movies, mStats, {
     minYear: MIN_YEAR,
     minRatingCount: CATALOG_MIN_RATINGS,
@@ -99,7 +82,6 @@ async function main() {
   }
   console.log(`  OK   every catalogue entry has an imdbId and a year >= ${MIN_YEAR}`)
 
-  // ---- TMDB ----------------------------------------------------------------
   let details = new Map()
   if (NO_TMDB) {
     console.log("\nTMDB: skipped (--no-tmdb); posters will be null")
@@ -125,7 +107,6 @@ async function main() {
     console.warn(`  WARN poster coverage below 90% - check for TMDB errors in ${CACHE_DIR}`)
   }
 
-  // ---- item-item neighbour table --------------------------------------------
   const indexOfMovieId = new Map(catalog.map((m, i) => [m.movieId, i]))
 
   const engineColOfMovieId = new Map() // movieId -> compact engine index
@@ -153,9 +134,6 @@ async function main() {
   })
   console.log(`\r  ${fmt(trained.ratingRowsScanned)} rows scanned, ${fmt(trained.likedUserCount)} users contributed a "liked" rating`)
 
-  // Expand from compact engine indices to catalogue indices - the shipped
-  // table is addressed by catalogue index everywhere, so the runtime never
-  // needs to know the engine/catalogue distinction existed.
   const M = catalog.length
   const neighborIdx = new Int32Array(M * NEIGHBOR_K).fill(-1)
   const neighborSim = new Float32Array(M * NEIGHBOR_K)
@@ -177,7 +155,6 @@ async function main() {
   const withNeighbors = engineCatalogIndex.length
   console.log(`\nNeighbour table: ${fmt(M)} catalogue movies x ${NEIGHBOR_K} neighbours (${fmt(withNeighbors)} rows populated)`)
 
-  // ---- write ---------------------------------------------------------------
   mkdirSync(OUT_DIR, { recursive: true })
   for (const f of readdirSync(OUT_DIR)) {
     if (/^itemnb\..*\.bin$/.test(f) || /^ratings\..*\.bin$/.test(f)) rmSync(join(OUT_DIR, f))
@@ -187,11 +164,6 @@ async function main() {
   const binName = `itemnb.${hash}.bin`
   writeFileSync(join(OUT_DIR, binName), buf)
 
-  // The catalogue index ships to every visitor before first paint: title,
-  // poster, year, genres - everything search, popularity ranking and the
-  // recommender itself need. Overview text is prose nobody reads until a
-  // card is actually on screen, and at ~180 chars x 18.9k movies it's most
-  // of the payload - see overviews.json below, fetched lazily instead.
   const discoverIds = catalog.slice(0, DISCOVER_POOL).map((m) => m.movieId)
   const catalogJson = {
     schemaVersion: 3,
@@ -215,9 +187,6 @@ async function main() {
   const catalogBuf = Buffer.from(JSON.stringify(catalogJson))
   writeFileSync(join(OUT_DIR, "catalog.json"), catalogBuf)
 
-  // Aligned by catalogue index (the `i` field above), not movieId - a plain
-  // array avoids repeating a key per movie. Fetched only once a card needs
-  // to render one, never blocks first paint.
   const overviewsJson = catalog.map((m) => {
     const overview = details.get(m.tmdbId)?.overview ?? ""
     return overview.length > OVERVIEW_MAX ? `${overview.slice(0, OVERVIEW_MAX - 1).trimEnd()}…` : overview

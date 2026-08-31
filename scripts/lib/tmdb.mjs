@@ -24,11 +24,19 @@ export function cachePathFor(cacheDir, tmdbId) {
   return join(cacheDir, `${tmdbId}.json`)
 }
 
+// v4 read-access tokens are JWTs (two dots) and go in an Authorization header;
+// v3 keys are a bare 32-char hex string and go in the query string.
+const isV4Token = (apiKey) => apiKey.includes(".")
+
 async function fetchOne(tmdbId, apiKey) {
+  const v4 = isV4Token(apiKey)
+  const url = v4 ? `${BASE}/movie/${tmdbId}` : `${BASE}/movie/${tmdbId}?api_key=${apiKey}`
+  const headers = v4 ? { Authorization: `Bearer ${apiKey}`, accept: "application/json" } : undefined
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     let res
     try {
-      res = await fetch(`${BASE}/movie/${tmdbId}?api_key=${apiKey}`)
+      res = await fetch(url, { headers })
     } catch (err) {
       if (attempt === MAX_RETRIES) throw err
       await sleep(500 * 2 ** attempt)

@@ -1,0 +1,13 @@
+name = "movie-recommendation-page"
+main = ".open-next/worker.js"
+compatibility_date = "2026-08-31"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "moviemind"
+database_id = "REPLACE_ME_AFTER_WRANGLER_D1_CREATE"

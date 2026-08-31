@@ -1,17 +1,15 @@
 "use client"
 
-import { useState } from "react"
 import Link from "next/link"
 import { Film, Star } from "lucide-react"
+import { signIn } from "next-auth/react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { useProfile } from "@/contexts/profile-context"
 import { ProfileMenu } from "@/components/profile/profile-menu"
-import { ProfileDialog } from "@/components/profile/profile-dialog"
 
 export default function Navbar() {
   const { profile, isLoading } = useProfile()
-  const [dialogOpen, setDialogOpen] = useState(false)
 
   return (
     <header className="border-b">
@@ -37,12 +35,10 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-4">
-          {!isLoading && (profile ? <ProfileMenu /> : <Button onClick={() => setDialogOpen(true)}>Get started</Button>)}
+          {!isLoading && (profile ? <ProfileMenu /> : <Button onClick={() => signIn("google")}>Sign in with Google</Button>)}
           <ThemeToggle />
         </div>
       </div>
-
-      <ProfileDialog isOpen={dialogOpen} onClose={() => setDialogOpen(false)} defaultTab="new" />
     </header>
   )
 }

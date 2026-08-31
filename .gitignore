@@ -22,9 +22,15 @@ yarn-error.log*
 # vercel
 .vercel
 
+# cloudflare
+.wrangler/
+.open-next/
+.dev.vars
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+worker-configuration.d.ts
 
 # dataset build inputs and caches (raw MovieLens CSVs, TMDB responses).
 # NOTE: public/data/ is deliberately NOT ignored - it is committed build output.

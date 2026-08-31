@@ -1,137 +1,70 @@
 "use client"
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { useSession, signOut as nextAuthSignOut } from "next-auth/react"
+import { toast } from "sonner"
 
-import { canHash, hashPassword, newSalt, verifyPassword } from "@/lib/profiles/hash"
-import { emptyDb, newProfile, ratingCountOf, type StoredDb, type StoredProfile } from "@/lib/profiles/schema"
-import { readDbSync, saveDb } from "@/lib/profiles/store"
-
-export interface ProfileSummary {
-  id: string
-  username: string
-  displayName: string
-  hasPassword: boolean
-  ratingCount: number
+export interface ProfileState {
+  ratings: Record<string, number>
+  ratedAt: Record<string, string>
+  skipped: number[]
+  recommendationOffset: number
 }
 
 interface ProfileContextValue {
-  profile: StoredProfile | null
-  profiles: ProfileSummary[]
+  profile: ProfileState | null
   isLoading: boolean
-  createProfile: (input: { displayName: string; username: string; password?: string }) => Promise<void>
-  signIn: (username: string, password?: string) => Promise<void>
   signOut: () => void
   rateMovie: (movieId: number, rating: number) => void
   skipMovie: (movieId: number) => void
-  unskipMovie: (movieId: number) => void
-  resetRatings: () => void
-  deleteProfile: (id: string) => void
   advanceRecommendations: () => void
   ratingCount: number
 }
 
 const ProfileContext = createContext<ProfileContextValue | undefined>(undefined)
 
-const SAVE_DEBOUNCE_MS = 300
+function emptyState(): ProfileState {
+  return { ratings: {}, ratedAt: {}, skipped: [], recommendationOffset: 0 }
+}
 
 export function ProfileProvider({ children }: { children: ReactNode }) {
-  const [db, setDb] = useState<StoredDb>(emptyDb)
-  const [isLoading, setIsLoading] = useState(true)
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const dbRef = useRef<StoredDb>(db)
+  const { status } = useSession()
+  const [state, setState] = useState<ProfileState | null>(null)
+  const stateRef = useRef<ProfileState | null>(state)
+  stateRef.current = state
 
   useEffect(() => {
-    const loaded = readDbSync()
-    dbRef.current = loaded
-    setDb(loaded)
-    setIsLoading(false)
-  }, [])
-
-  const commit = useCallback((fn: (current: StoredDb) => StoredDb) => {
-    const next = fn(dbRef.current)
-    if (next === dbRef.current) return
-    dbRef.current = next
-    setDb(next)
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => void saveDb(next), SAVE_DEBOUNCE_MS)
-  }, [])
-
-  useEffect(
-    () => () => {
-      if (saveTimer.current) {
-        clearTimeout(saveTimer.current)
-        void saveDb(dbRef.current)
-      }
-    },
-    [],
-  )
-
-  const profile = useMemo(
-    () => db.profiles.find((p) => p.id === db.activeProfileId) ?? null,
-    [db.profiles, db.activeProfileId],
-  )
-
-  const updateActive = useCallback(
-    (fn: (p: StoredProfile) => StoredProfile) => {
-      commit((current) => {
-        const active = current.profiles.find((p) => p.id === current.activeProfileId)
-        if (!active) return current
-        return { ...current, profiles: current.profiles.map((p) => (p.id === active.id ? fn(p) : p)) }
+    if (status !== "authenticated") {
+      setState(null)
+      return
+    }
+    let cancelled = false
+    fetch("/api/ratings")
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load ratings")
+        return res.json() as Promise<{ ratings: Record<string, number>; ratedAt: Record<string, string>; skipped: number[] }>
       })
-    },
-    [commit],
-  )
+      .then((data) => {
+        if (!cancelled) setState({ ...data, recommendationOffset: 0 })
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setState(emptyState())
+          toast.error("Couldn't load your ratings.")
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [status])
 
-  const createProfile = useCallback<ProfileContextValue["createProfile"]>(
-    async ({ displayName, username, password }) => {
-      const name = username.trim()
-      if (!name) throw new Error("Pick a name for this profile.")
-      if (dbRef.current.profiles.some((p) => p.username.toLowerCase() === name.toLowerCase())) {
-        throw new Error(`The name "${name}" is already used in this browser.`)
-      }
-
-      let salt: string | null = null
-      let passwordHash: string | null = null
-      if (password && canHash()) {
-        salt = newSalt()
-        passwordHash = await hashPassword(password, salt)
-      }
-
-      const created = newProfile({ displayName, username: name, salt, passwordHash })
-      commit((current) => ({
-        ...current,
-        profiles: [...current.profiles, created],
-        activeProfileId: created.id,
-      }))
-    },
-    [commit],
-  )
-
-  const signIn = useCallback<ProfileContextValue["signIn"]>(
-    async (username, password) => {
-      const target = dbRef.current.profiles.find(
-        (p) => p.username.toLowerCase() === username.trim().toLowerCase(),
-      )
-      if (!target) throw new Error("No profile with that name in this browser.")
-
-      if (target.passwordHash && target.salt) {
-        if (!password) throw new Error("This profile has a password.")
-        const okPassword = await verifyPassword(password, target.salt, target.passwordHash)
-        if (!okPassword) throw new Error("That password does not match.")
-      }
-
-      commit((current) => ({ ...current, activeProfileId: target.id }))
-    },
-    [commit],
-  )
-
-  const signOut = useCallback(() => {
-    commit((current) => ({ ...current, activeProfileId: null }))
-  }, [commit])
+  const commit = useCallback((fn: (current: ProfileState) => ProfileState) => {
+    setState((current) => fn(current ?? emptyState()))
+  }, [])
 
   const rateMovie = useCallback(
     (movieId: number, rating: number) => {
-      updateActive((p) => {
+      commit((p) => {
         const ratings = { ...p.ratings }
         const ratedAt = { ...p.ratedAt }
         if (rating > 0) {
@@ -143,13 +76,19 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         }
         return { ...p, ratings, ratedAt, skipped: p.skipped.filter((id) => id !== movieId), recommendationOffset: 0 }
       })
+
+      fetch("/api/ratings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ movieId, rating }),
+      }).catch(() => toast.error("Couldn't save that rating - try again."))
     },
-    [updateActive],
+    [commit],
   )
 
   const skipMovie = useCallback(
     (movieId: number) => {
-      updateActive((p) => {
+      commit((p) => {
         if (p.skipped.includes(movieId)) return p
         const ratings = { ...p.ratings }
         const ratedAt = { ...p.ratedAt }
@@ -157,78 +96,31 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
         delete ratedAt[movieId]
         return { ...p, ratings, ratedAt, skipped: [...p.skipped, movieId], recommendationOffset: 0 }
       })
-    },
-    [updateActive],
-  )
 
-  const unskipMovie = useCallback(
-    (movieId: number) => {
-      updateActive((p) => ({ ...p, skipped: p.skipped.filter((id) => id !== movieId), recommendationOffset: 0 }))
-    },
-    [updateActive],
-  )
-
-  const resetRatings = useCallback(() => {
-    updateActive((p) => ({ ...p, ratings: {}, ratedAt: {}, skipped: [], recommendationOffset: 0 }))
-  }, [updateActive])
-
-  const advanceRecommendations = useCallback(() => {
-    updateActive((p) => ({ ...p, recommendationOffset: p.recommendationOffset + 1 }))
-  }, [updateActive])
-
-  const deleteProfile = useCallback(
-    (id: string) => {
-      commit((current) => ({
-        ...current,
-        profiles: current.profiles.filter((p) => p.id !== id),
-        activeProfileId: current.activeProfileId === id ? null : current.activeProfileId,
-      }))
+      fetch("/api/skips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ movieId }),
+      }).catch(() => toast.error("Couldn't save that - try again."))
     },
     [commit],
   )
 
-  const profiles = useMemo<ProfileSummary[]>(
-    () =>
-      db.profiles.map((p) => ({
-        id: p.id,
-        username: p.username,
-        displayName: p.displayName,
-        hasPassword: Boolean(p.passwordHash),
-        ratingCount: Object.keys(p.ratings).length,
-      })),
-    [db.profiles],
-  )
+  const advanceRecommendations = useCallback(() => {
+    commit((p) => ({ ...p, recommendationOffset: p.recommendationOffset + 1 }))
+  }, [commit])
 
   const value = useMemo<ProfileContextValue>(
     () => ({
-      profile,
-      profiles,
-      isLoading,
-      createProfile,
-      signIn,
-      signOut,
+      profile: status === "authenticated" ? (state ?? emptyState()) : null,
+      isLoading: status === "loading" || (status === "authenticated" && state === null),
+      signOut: () => void nextAuthSignOut(),
       rateMovie,
       skipMovie,
-      unskipMovie,
-      resetRatings,
-      deleteProfile,
       advanceRecommendations,
-      ratingCount: ratingCountOf(profile),
+      ratingCount: state ? Object.keys(state.ratings).length : 0,
     }),
-    [
-      profile,
-      profiles,
-      isLoading,
-      createProfile,
-      signIn,
-      signOut,
-      rateMovie,
-      skipMovie,
-      unskipMovie,
-      resetRatings,
-      deleteProfile,
-      advanceRecommendations,
-    ],
+    [status, state, rateMovie, skipMovie, advanceRecommendations],
   )
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>

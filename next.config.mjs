@@ -1,3 +1,5 @@
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare"
+
 const nextConfig = {
   images: {
     unoptimized: true,
@@ -11,3 +13,5 @@ const nextConfig = {
 }
 
 export default nextConfig
+
+initOpenNextCloudflareForDev()

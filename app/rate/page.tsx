@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { Loader2, SkipForward } from "lucide-react"
+import { signIn } from "next-auth/react"
 import { useProfile } from "@/contexts/profile-context"
 import { MovieSearch } from "@/components/rating/movie-search"
 import { StarRating } from "@/components/rating/star-rating"
@@ -9,7 +10,6 @@ import { RatedMovieList, type RatedEntry } from "@/components/rating/rated-movie
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { ProfileDialog } from "@/components/profile/profile-dialog"
 import { loadCatalog, loadMeta, posterUrl, imdbUrl, useOverview, type CatalogMovie } from "@/lib/recommender"
 
 export default function RatePage() {
@@ -18,7 +18,6 @@ export default function RatePage() {
   const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)
   const [discoverPool, setDiscoverPool] = useState<number[] | null>(null)
   const [selected, setSelected] = useState<CatalogMovie | null>(null)
-  const [dialogOpen, setDialogOpen] = useState(false)
 
   useEffect(() => {
     loadCatalog().then(setCatalog)
@@ -66,12 +65,9 @@ export default function RatePage() {
   if (!profile) {
     return (
       <div className="container mx-auto max-w-md px-4 py-20 text-center">
-        <h1 className="text-2xl font-bold mb-2">Pick a profile to start rating</h1>
-        <p className="text-muted-foreground mb-6">
-          Ratings live only in this browser - create a local profile to get going.
-        </p>
-        <Button onClick={() => setDialogOpen(true)}>Get started</Button>
-        <ProfileDialog isOpen={dialogOpen} onClose={() => setDialogOpen(false)} defaultTab="new" />
+        <h1 className="text-2xl font-bold mb-2">Sign in to start rating</h1>
+        <p className="text-muted-foreground mb-6">Your ratings are saved to your account and follow you anywhere.</p>
+        <Button onClick={() => signIn("google")}>Sign in with Google</Button>
       </div>
     )
   }

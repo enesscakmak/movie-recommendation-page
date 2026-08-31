@@ -20,6 +20,6 @@ export type {
 
 export { DEFAULT_OPTIONS, MIN_RATINGS_FOR_CF, IDEAL_RATINGS } from "./types"
 
-export { loadCatalog, loadMeta, loadNeighborTable, decodeNeighborTable, posterUrl, imdbUrl } from "./load"
+export { loadCatalog, loadMeta, loadNeighborTable, loadOverviews, useOverview, decodeNeighborTable, posterUrl, imdbUrl } from "./load"
 export { itemSimilarity, recommend, hasUsableNeighbors } from "./itemitem"
 export { popularMovies } from "./popular"

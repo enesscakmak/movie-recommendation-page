@@ -187,9 +187,14 @@ async function main() {
   const binName = `itemnb.${hash}.bin`
   writeFileSync(join(OUT_DIR, binName), buf)
 
+  // The catalogue index ships to every visitor before first paint: title,
+  // poster, year, genres - everything search, popularity ranking and the
+  // recommender itself need. Overview text is prose nobody reads until a
+  // card is actually on screen, and at ~180 chars x 18.9k movies it's most
+  // of the payload - see overviews.json below, fetched lazily instead.
   const discoverIds = catalog.slice(0, DISCOVER_POOL).map((m) => m.movieId)
   const catalogJson = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     movies: catalog.map((m, i) => {
       const d = details.get(m.tmdbId) ?? { posterPath: null, overview: "" }
       return {
@@ -202,7 +207,6 @@ async function main() {
         im: m.imdbId,
         td: m.tmdbId,
         p: d.posterPath,
-        o: d.overview.length > OVERVIEW_MAX ? `${d.overview.slice(0, OVERVIEW_MAX - 1).trimEnd()}…` : d.overview,
         n: m.ratingCount,
         a: Number(m.meanRating.toFixed(3)),
       }
@@ -211,8 +215,18 @@ async function main() {
   const catalogBuf = Buffer.from(JSON.stringify(catalogJson))
   writeFileSync(join(OUT_DIR, "catalog.json"), catalogBuf)
 
+  // Aligned by catalogue index (the `i` field above), not movieId - a plain
+  // array avoids repeating a key per movie. Fetched only once a card needs
+  // to render one, never blocks first paint.
+  const overviewsJson = catalog.map((m) => {
+    const overview = details.get(m.tmdbId)?.overview ?? ""
+    return overview.length > OVERVIEW_MAX ? `${overview.slice(0, OVERVIEW_MAX - 1).trimEnd()}…` : overview
+  })
+  const overviewsBuf = Buffer.from(JSON.stringify(overviewsJson))
+  writeFileSync(join(OUT_DIR, "overviews.json"), overviewsBuf)
+
   const meta = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     builtAt: new Date().toISOString(),
     neighborsFile: binName,
     movieCount: M,
@@ -229,7 +243,7 @@ async function main() {
   writeFileSync(join(OUT_DIR, "dataset-meta.json"), metaBuf)
 
   console.log("\nWrote public/data:")
-  for (const [name, b] of [["catalog.json", catalogBuf], [binName, buf], ["dataset-meta.json", metaBuf]]) {
+  for (const [name, b] of [["catalog.json", catalogBuf], ["overviews.json", overviewsBuf], [binName, buf], ["dataset-meta.json", metaBuf]]) {
     console.log(`  ${name.padEnd(24)} ${kb(b.length).padStart(10)} raw  ${kb(gzipSync(b).length).padStart(10)} gzip`)
   }
 

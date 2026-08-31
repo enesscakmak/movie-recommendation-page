@@ -15,7 +15,6 @@ export interface CatalogMovie {
   tmdbId: number | null
   /** Bare TMDB path, e.g. "/abc.jpg". Size is chosen at render time. */
   posterPath: string | null
-  overview: string
   ratingCount: number
   meanRating: number
 }

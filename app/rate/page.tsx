@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ProfileDialog } from "@/components/profile/profile-dialog"
-import { loadCatalog, loadMeta, posterUrl, imdbUrl, type CatalogMovie } from "@/lib/recommender"
+import { loadCatalog, loadMeta, posterUrl, imdbUrl, useOverview, type CatalogMovie } from "@/lib/recommender"
 
 export default function RatePage() {
   const { profile, isLoading: profileLoading, rateMovie, skipMovie } = useProfile()
@@ -136,6 +136,7 @@ export default function RatePage() {
 
 function DiscoverCard({ movie, onRate, onSkip }: { movie: CatalogMovie; onRate: (rating: number) => void; onSkip: () => void }) {
   const poster = posterUrl(movie.posterPath, "w342")
+  const overview = useOverview(movie.index)
   return (
     <Card className="overflow-hidden">
       <div className="grid sm:grid-cols-[200px_1fr]">
@@ -162,7 +163,7 @@ function DiscoverCard({ movie, onRate, onSkip }: { movie: CatalogMovie; onRate: 
             </CardDescription>
           </CardHeader>
           <CardContent className="flex-1">
-            <p className="text-sm text-muted-foreground line-clamp-4">{movie.overview}</p>
+            <p className="text-sm text-muted-foreground line-clamp-4">{overview}</p>
           </CardContent>
           <CardFooter className="flex items-center justify-between">
             <StarRating value={0} onChange={onRate} size="lg" />

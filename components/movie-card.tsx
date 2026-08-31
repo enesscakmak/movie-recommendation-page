@@ -7,7 +7,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { StarRating } from "@/components/rating/star-rating"
 import type { CatalogMovie } from "@/lib/recommender"
-import { posterUrl, imdbUrl } from "@/lib/recommender"
+import { posterUrl, imdbUrl, useOverview } from "@/lib/recommender"
 
 interface MovieCardProps {
   movie: CatalogMovie
@@ -21,6 +21,7 @@ interface MovieCardProps {
 
 export default function MovieCard({ movie, userRating, onRate, onSkip, because }: MovieCardProps) {
   const poster = posterUrl(movie.posterPath)
+  const overview = useOverview(movie.index)
 
   return (
     <Card className="overflow-hidden transition-all hover:shadow-lg flex flex-col">
@@ -59,7 +60,7 @@ export default function MovieCard({ movie, userRating, onRate, onSkip, because }
         {because && because.length > 0 && (
           <p className="text-xs text-muted-foreground mb-2 line-clamp-1">Because you liked {because.join(", ")}</p>
         )}
-        {movie.overview && <p className="text-muted-foreground text-sm line-clamp-3 mb-2">{movie.overview}</p>}
+        {overview && <p className="text-muted-foreground text-sm line-clamp-3 mb-2">{overview}</p>}
         <div className="flex flex-wrap gap-1">
           {movie.genres.slice(0, 3).map((g) => (
             <Badge key={g} variant="outline" className="text-xs">

@@ -1,8 +1,13 @@
+import { useEffect, useState } from "react"
 import type { CatalogMovie, DatasetMeta, ItemNeighbors } from "./types"
 
 const MAGIC = "MIN1"
 
-/** Wire form of catalog.json - short keys, because it ships to every visitor. */
+/**
+ * Wire form of catalog.json - short keys, because it ships to every visitor.
+ * Overview text lives separately in overviews.json (see loadOverviews) so
+ * this index stays small enough to fetch before first paint.
+ */
 export interface RawCatalogMovie {
   i: number
   m: number
@@ -13,7 +18,6 @@ export interface RawCatalogMovie {
   im: string
   td: number | null
   p: string | null
-  o: string
   n: number
   a: number
 }
@@ -34,7 +38,6 @@ function expand(r: RawCatalogMovie): CatalogMovie {
     imdbId: r.im,
     tmdbId: r.td,
     posterPath: r.p,
-    overview: r.o ?? "",
     ratingCount: r.n,
     meanRating: r.a,
   }
@@ -64,6 +67,7 @@ export function decodeNeighborTable(ab: ArrayBuffer): ItemNeighbors {
 let catalogPromise: Promise<CatalogMovie[]> | null = null
 let metaPromise: Promise<DatasetMeta> | null = null
 let neighborsPromise: Promise<ItemNeighbors> | null = null
+let overviewsPromise: Promise<string[]> | null = null
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(path)
@@ -94,6 +98,33 @@ export function loadNeighborTable(): Promise<ItemNeighbors> {
     return decodeNeighborTable(await res.arrayBuffer())
   })()
   return neighborsPromise
+}
+
+/**
+ * Overview text, aligned by catalogue index to overviews.json. Not needed
+ * until a card actually renders one, so it is never part of loadCatalog -
+ * fetch it only once something on screen wants it (see useOverview).
+ */
+export function loadOverviews(): Promise<string[]> {
+  overviewsPromise ??= fetchJson<string[]>("/data/overviews.json")
+  return overviewsPromise
+}
+
+/** A movie's overview text, fetched lazily and filled in once it arrives. */
+export function useOverview(index: number): string {
+  const [overview, setOverview] = useState("")
+
+  useEffect(() => {
+    let cancelled = false
+    loadOverviews().then((overviews) => {
+      if (!cancelled) setOverview(overviews[index] ?? "")
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [index])
+
+  return overview
 }
 
 export function posterUrl(posterPath: string | null, size: "w185" | "w342" | "w500" = "w342"): string | null {

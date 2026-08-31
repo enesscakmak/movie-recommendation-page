@@ -9,5 +9,5 @@ binding = "ASSETS"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "moviemind"
-database_id = "REPLACE_ME_AFTER_WRANGLER_D1_CREATE"
+database_name = "movie-recommender"
+database_id = "d85e3455-f06c-4695-bf5d-3c4d260b41be"

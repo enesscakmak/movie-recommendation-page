@@ -61,10 +61,16 @@ export default function Home() {
     return map
   }, [catalog])
 
+  const excludeIds = useMemo(() => {
+    const ids = new Set<number>(profile?.skipped ?? [])
+    if (profile) Object.keys(profile.ratings).forEach((id) => ids.add(Number(id)))
+    return ids
+  }, [profile])
+
   const popular = useMemo(() => {
     if (!catalog || personalizing) return []
-    return popularMovies(catalog, { count: 12 })
-  }, [catalog, personalizing])
+    return popularMovies(catalog, { count: 12, excludeIds })
+  }, [catalog, personalizing, excludeIds])
 
   if (error) {
     return (
@@ -140,6 +146,7 @@ export default function Home() {
       ) : (
         <MovieGrid
           movies={displayMovies}
+          ratings={profile?.ratings}
           because={becauseMap}
           onRate={(movieId, rating) => rateMovie(movieId, rating)}
           onSkip={(movieId) => skipMovie(movieId)}

@@ -53,3 +53,7 @@ export async function setSkip(db: D1Database, userId: string, movieId: number): 
     db.prepare("DELETE FROM ratings WHERE user_id = ? AND movie_id = ?").bind(userId, movieId),
   ])
 }
+
+export async function removeSkip(db: D1Database, userId: string, movieId: number): Promise<void> {
+  await db.prepare("DELETE FROM skips WHERE user_id = ? AND movie_id = ?").bind(userId, movieId).run()
+}

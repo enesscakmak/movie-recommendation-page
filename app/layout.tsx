@@ -10,7 +10,7 @@ import Navbar from "@/components/navbar"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "MovieMind - Personalized Movie Recommendations",
+  title: "Movie Recommender - Personalized Movie Recommendations",
   description: "Get personalized movie recommendations based on your preferences using machine learning",
 }
 

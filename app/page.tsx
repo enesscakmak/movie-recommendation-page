@@ -4,7 +4,10 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Loader2, RefreshCw, Star } from "lucide-react"
 import MovieGrid from "@/components/movie-grid"
+import { MovieSearch } from "@/components/rating/movie-search"
+import { StarRating } from "@/components/rating/star-rating"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { useProfile } from "@/contexts/profile-context"
 import {
@@ -18,6 +21,7 @@ import {
   type UserRating,
   MIN_RATINGS_FOR_CF,
   IDEAL_RATINGS,
+  CURATED_HOME_IDS,
 } from "@/lib/recommender"
 
 export default function Home() {
@@ -26,6 +30,7 @@ export default function Home() {
   const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)
   const [neighbors, setNeighbors] = useState<ItemNeighbors | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [searchSelected, setSearchSelected] = useState<CatalogMovie | null>(null)
 
   useEffect(() => {
     loadCatalog()
@@ -67,9 +72,11 @@ export default function Home() {
     return ids
   }, [profile])
 
+  const ratedIds = useMemo(() => new Set(Object.keys(profile?.ratings ?? {}).map(Number)), [profile])
+
   const popular = useMemo(() => {
     if (!catalog || personalizing) return []
-    return popularMovies(catalog, { count: 12, excludeIds })
+    return popularMovies(catalog, { count: 12, excludeIds, curatedIds: CURATED_HOME_IDS })
   }, [catalog, personalizing, excludeIds])
 
   if (error) {
@@ -119,9 +126,9 @@ export default function Home() {
           </Button>
         ) : (
           <Button asChild>
-            <Link href="/rate">
+            <Link href="/rated">
               <Star className="mr-2 h-4 w-4" />
-              Rate movies
+              Rated Movies
             </Link>
           </Button>
         )}
@@ -132,6 +139,27 @@ export default function Home() {
           <Progress value={(ratingCount / MIN_RATINGS_FOR_CF) * 100} />
         </div>
       )}
+
+      <div className="mb-8 max-w-xl">
+        <MovieSearch catalog={catalog} onMovieSelect={setSearchSelected} ratedIds={ratedIds} />
+        {searchSelected && (
+          <Card className="mt-4">
+            <CardContent className="flex items-center justify-between gap-4 pt-6">
+              <div>
+                <div className="font-medium">{searchSelected.title}</div>
+                <div className="text-sm text-muted-foreground">{searchSelected.year}</div>
+              </div>
+              <StarRating
+                value={profile?.ratings[searchSelected.movieId] ?? 0}
+                onChange={(rating) => {
+                  rateMovie(searchSelected.movieId, rating)
+                  setSearchSelected(null)
+                }}
+              />
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {personalizing && !neighbors ? (
         <div className="flex items-center justify-center py-24">

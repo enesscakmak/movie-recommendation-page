@@ -2,6 +2,22 @@ import type { CatalogMovie } from "./types"
 
 const PRIOR_WEIGHT = 50
 
+// Curated first-run lineup for visitors with no ratings yet, in display order.
+// Falls back to the popularity ranking below once these run out or get rated/skipped.
+export const CURATED_HOME_IDS: number[] = [
+  8961, // The Incredibles
+  106782, // The Wolf of Wall Street
+  58559, // The Dark Knight
+  4993, // The Lord of the Rings: The Fellowship of the Ring
+  527, // Schindler's List
+  296, // Pulp Fiction
+  356, // Forrest Gump
+  1682, // The Truman Show
+  2959, // Fight Club
+  2571, // The Matrix
+  1210, // Star Wars: Episode VI - Return of the Jedi (earliest Star Wars film in the catalog)
+]
+
 let cacheCatalog: CatalogMovie[] | null = null
 let cacheMinRatings = -1
 let cacheRanked: CatalogMovie[] = []
@@ -31,9 +47,36 @@ export function popularMovies(
     minRatings = 20,
     excludeIds,
     offset = 0,
-  }: { count?: number; minRatings?: number; excludeIds?: Set<number>; offset?: number } = {},
+    curatedIds,
+  }: {
+    count?: number
+    minRatings?: number
+    excludeIds?: Set<number>
+    offset?: number
+    curatedIds?: number[]
+  } = {},
 ): CatalogMovie[] {
   const ranked = rankedPopularity(catalog, minRatings)
+
+  if (curatedIds) {
+    const byId = new Map(catalog.map((m) => [m.movieId, m]))
+    const picked: CatalogMovie[] = []
+    const seen = new Set<number>()
+    for (const id of curatedIds) {
+      if (excludeIds?.has(id)) continue
+      const movie = byId.get(id)
+      if (!movie) continue
+      picked.push(movie)
+      seen.add(id)
+    }
+    for (const movie of ranked) {
+      if (picked.length >= count) break
+      if (seen.has(movie.movieId) || excludeIds?.has(movie.movieId)) continue
+      picked.push(movie)
+    }
+    return picked.slice(0, count)
+  }
+
   const filtered = excludeIds ? ranked.filter((m) => !excludeIds.has(m.movieId)) : ranked
   if (filtered.length === 0) return []
 

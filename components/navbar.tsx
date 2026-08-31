@@ -17,7 +17,7 @@ export default function Navbar() {
         <div className="flex items-center gap-6">
           <Link href="/" className="flex items-center gap-2">
             <Film className="h-6 w-6" />
-            <span className="font-bold">MovieMind</span>
+            <span className="font-bold">Movie Recommender</span>
           </Link>
 
           <nav className="hidden md:flex items-center gap-6">
@@ -25,11 +25,11 @@ export default function Navbar() {
               Home
             </Link>
             <Link
-              href="/rate"
+              href="/rated"
               className="text-sm font-medium transition-colors hover:text-primary flex items-center gap-1"
             >
               <Star className="h-4 w-4" />
-              Rate Movies
+              Rated Movies
             </Link>
           </nav>
         </div>

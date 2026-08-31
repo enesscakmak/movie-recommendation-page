@@ -17,6 +17,7 @@ interface ProfileContextValue {
   signOut: () => void
   rateMovie: (movieId: number, rating: number) => void
   skipMovie: (movieId: number) => void
+  unskipMovie: (movieId: number) => void
   advanceRecommendations: () => void
   ratingCount: number
 }
@@ -106,6 +107,19 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
     [commit],
   )
 
+  const unskipMovie = useCallback(
+    (movieId: number) => {
+      commit((p) => ({ ...p, skipped: p.skipped.filter((id) => id !== movieId) }))
+
+      fetch("/api/skips", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ movieId }),
+      }).catch(() => toast.error("Couldn't update that - try again."))
+    },
+    [commit],
+  )
+
   const advanceRecommendations = useCallback(() => {
     commit((p) => ({ ...p, recommendationOffset: p.recommendationOffset + 1 }))
   }, [commit])
@@ -117,10 +131,11 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       signOut: () => void nextAuthSignOut(),
       rateMovie,
       skipMovie,
+      unskipMovie,
       advanceRecommendations,
       ratingCount: state ? Object.keys(state.ratings).length : 0,
     }),
-    [status, state, rateMovie, skipMovie, advanceRecommendations],
+    [status, state, rateMovie, skipMovie, unskipMovie, advanceRecommendations],
   )
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>

@@ -142,8 +142,17 @@ Rewired off the mock data entirely:
   title card when no poster is set).
 - `app/page.tsx` — popularity feed until `MIN_RATINGS_FOR_CF` (5) ratings, then
   personalised recs with a "because you liked X" line and a working Refresh button.
-- `app/rate/page.tsx` — Discover tab (one-at-a-time queue off `meta.discoverPool`,
-  skipping already-rated/skipped films) + Search tab + your-ratings list with removal.
+  Now also has an inline `MovieSearch` box so you can find and rate any movie without
+  leaving Home.
+- `app/rated/page.tsx` (renamed from `app/rate/page.tsx`, branding renamed
+  "MovieMind" → "Movie Recommender") — Discover tab is gone; three tabs instead:
+  "Your Ratings" (existing list+removal), "Didn't Watch" (skipped movies, via new
+  `components/rating/skipped-movie-list.tsx`, with rate-inline or unflag), "Search"
+  (unchanged, for finding+rating new movies). `meta.discoverPool`/`loadMeta` are no
+  longer used anywhere in the UI (still produced by `build-dataset.mjs`, just dead for
+  now — left alone since removing it touches the data pipeline unnecessarily).
+  Unflagging needs a new `unskipMovie` in `contexts/profile-context.tsx`, a
+  `DELETE /api/skips` route, and `removeSkip()` in `lib/ratings/db.ts`.
 
 `next.config.mjs` — dropped the dead `v0-user-next.config` import and both
 `ignoreBuildErrors`/`ignoreDuringBuilds`. `npx tsc --noEmit` is clean across the whole

@@ -1,13 +1,16 @@
 "use client"
 
+import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ExternalLink, EyeOff } from "lucide-react"
+import { ExternalLink, EyeOff, Loader2, Sparkles } from "lucide-react"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog"
 import { StarRating } from "@/components/rating/star-rating"
-import type { CatalogMovie } from "@/lib/recommender"
-import { posterUrl, imdbUrl, useOverview } from "@/lib/recommender"
+import { useProfile } from "@/contexts/profile-context"
+import type { CatalogMovie, ItemNeighbors } from "@/lib/recommender"
+import { posterUrl, imdbUrl, useOverview, loadCatalog, loadNeighborTable, similarTo } from "@/lib/recommender"
 
 interface MovieCardProps {
   movie: CatalogMovie
@@ -61,13 +64,31 @@ export default function MovieCard({ movie, userRating, onRate, onSkip, because }
           <p className="text-xs text-muted-foreground mb-2 line-clamp-1">Because you liked {because.join(", ")}</p>
         )}
         {overview && <p className="text-muted-foreground text-sm line-clamp-3 mb-2">{overview}</p>}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 mb-2">
           {movie.genres.slice(0, 3).map((g) => (
             <Badge key={g} variant="outline" className="text-xs">
               {g}
             </Badge>
           ))}
         </div>
+        <Dialog>
+          <DialogTrigger asChild>
+            <button
+              type="button"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              More like this
+            </button>
+          </DialogTrigger>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>More like {movie.title}</DialogTitle>
+              <DialogDescription>Films whose audiences overlap most with this one.</DialogDescription>
+            </DialogHeader>
+            <SimilarMovies movie={movie} />
+          </DialogContent>
+        </Dialog>
       </CardContent>
       {(onRate || onSkip) && (
         <CardFooter className="px-4 pb-4 pt-0 flex items-center justify-between gap-2">
@@ -85,5 +106,60 @@ export default function MovieCard({ movie, userRating, onRate, onSkip, because }
         </CardFooter>
       )}
     </Card>
+  )
+}
+
+/**
+ * Reads the same item-item neighbour table the personalised feed uses, just
+ * indexed by one film instead of a visitor's ratings - see `similarTo`.
+ * Catalog and neighbours are only fetched once the dialog actually mounts;
+ * both loaders are memoised so a visitor who already personalised pays
+ * nothing extra here.
+ */
+function SimilarMovies({ movie }: { movie: CatalogMovie }) {
+  const { profile, rateMovie, skipMovie } = useProfile()
+  const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)
+  const [neighbors, setNeighbors] = useState<ItemNeighbors | null>(null)
+
+  useEffect(() => {
+    loadCatalog().then(setCatalog)
+    loadNeighborTable().then(setNeighbors)
+  }, [])
+
+  const catalogById = useMemo(() => new Map(catalog?.map((m) => [m.movieId, m])), [catalog])
+
+  if (!catalog || !neighbors) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  const similarMovies = similarTo(movie.index, neighbors, catalog, 9)
+    .map((s) => catalogById.get(s.movieId))
+    .filter((m): m is CatalogMovie => Boolean(m))
+
+  if (similarMovies.length === 0) {
+    return (
+      <p className="py-8 text-center text-sm text-muted-foreground">
+        Not enough ratings on this title yet to find similar films.
+      </p>
+    )
+  }
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      {similarMovies.map((m) => (
+        <MovieCard
+          key={m.movieId}
+          movie={m}
+          userRating={profile?.ratings[m.movieId]}
+          because={[movie.title]}
+          onRate={(rating) => rateMovie(m.movieId, rating)}
+          onSkip={() => skipMovie(m.movieId)}
+        />
+      ))}
+    </div>
   )
 }

@@ -14,7 +14,7 @@
 // data never does. Measured on a held-out split this beats the user-based
 // approach at 1/8th the payload - see the README for the numbers.
 
-import type { CatalogMovie, ItemNeighbors, Recommendation, RecommendOptions, UserRating } from "./types"
+import type { CatalogMovie, ItemNeighbors, Recommendation, RecommendOptions, SimilarMovie, UserRating } from "./types"
 import { DEFAULT_OPTIONS } from "./types"
 
 const SIM_SCALE = 65535 // matches the quantisation in scripts/lib/encode.mjs
@@ -181,6 +181,29 @@ export function recommend(
     if (because2[col] >= 0) because.push(catalog[because2[col]].movieId)
     return { movieId: catalog[col].movieId, score: score[col], support: support[col], because }
   })
+}
+
+/**
+ * A single film's stored top-K neighbours, no ratings or scoring involved -
+ * just the row the build script already computed. Empty for films below the
+ * recommendable threshold (see `recommendableMinRatings` in dataset-meta.json),
+ * same films `recommend()` never surfaces as a target either.
+ *
+ * Slots are stored in similarity order (scripts/lib/itemitem.mjs sorts
+ * candidates descending before truncating to k), so this needs no re-sort.
+ */
+export function similarTo(index: number, nb: ItemNeighbors, catalog: CatalogMovie[], count = 10): SimilarMovie[] {
+  const k = nb.k
+  const out: SimilarMovie[] = []
+  for (let t = 0; t < k && out.length < count; t++) {
+    const slot = index * k + t
+    const idx = nb.neighborIdx[slot]
+    if (idx === EMPTY) break
+    const movie = catalog[idx]
+    if (!movie) continue
+    out.push({ movieId: movie.movieId, similarity: nb.neighborSim[slot] / SIM_SCALE })
+  }
+  return out
 }
 
 /** True when the visitor's ratings produced no usable recommendation at all. */

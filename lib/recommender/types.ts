@@ -68,6 +68,13 @@ export interface Recommendation {
   because: number[]
 }
 
+/** One entry from a single film's stored top-K neighbour row - see `similarTo`. */
+export interface SimilarMovie {
+  movieId: number
+  /** 0..1, straight from the stored table - not comparable across different source films. */
+  similarity: number
+}
+
 export interface RecommendOptions {
   count?: number
   /** A rated film below this many stars contributes no signal (see LIKE_THRESHOLD in itemitem.mjs). */

@@ -1,15 +1,20 @@
 #!/usr/bin/env node
 //
-// Turns the raw MovieLens ml-latest-small CSVs into the two files the app
-// ships: public/data/catalog.json and public/data/ratings.<hash>.bin.
+// Turns the raw MovieLens ml-32m CSVs into the two files the app ships:
+// public/data/catalog.json and public/data/itemnb.<hash>.bin.
 //
 //   pnpm build:dataset            # uses scripts/.cache/tmdb where possible
 //   pnpm build:dataset -- --refresh   # ignore the TMDB cache
 //   pnpm build:dataset -- --no-tmdb   # skip posters entirely (offline)
 //
 // Run it once and commit the output. It is deliberately NOT part of `next
-// build`: the dataset never changes, and a network fetch in CI is a failure
-// mode with no upside.
+// build`: the dataset never changes, and a network fetch (TMDB) or a 900 MB
+// CSV read in CI is a failure mode with no upside.
+//
+// This streams ratings.csv rather than parsing it whole - see movielens.mjs
+// for why - and trains the recommender's item-item neighbour table on the
+// FULL 33M-rating population before filtering down to what ships. Only the
+// trained top-K lists leave this machine; the training data never does.
 
 import { createHash } from "node:crypto"
 import { gzipSync } from "node:zlib"
@@ -20,14 +25,14 @@ import { fileURLToPath } from "node:url"
 import {
   EXPECTED,
   MIN_YEAR,
-  loadRaw,
-  userStatsFull,
-  movieStats,
+  loadMovies,
+  computeMovieStats,
   buildCatalog,
   ratingCountHistogram,
 } from "./lib/movielens.mjs"
+import { buildNeighborTable } from "./lib/itemitem.mjs"
 import { fetchDetails } from "./lib/tmdb.mjs"
-import { encodeMatrix, decodeMatrix, assertMatrixInvariants } from "./lib/encode.mjs"
+import { encodeNeighborTable, decodeNeighborTable, assertNeighborTableInvariants } from "./lib/encode.mjs"
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const ROOT = join(HERE, "..")
@@ -35,10 +40,13 @@ const DATA_DIR = join(HERE, "data", "ml-latest-small")
 const CACHE_DIR = join(HERE, ".cache", "tmdb")
 const OUT_DIR = join(ROOT, "public", "data")
 
-const CATALOG_MIN_RATINGS = 10 // searchable and rateable
-const RECOMMENDABLE_MIN_RATINGS = 20 // eligible to be recommended
+const CATALOG_MIN_RATINGS = 20 // searchable and rateable
+const RECOMMENDABLE_MIN_RATINGS = 100 // eligible for the item-item neighbour table
 const DISCOVER_POOL = 300 // the one-at-a-time rating queue
 const OVERVIEW_MAX = 200 // the card clamps to three lines anyway
+const NEIGHBOR_K = 20
+const NEIGHBOR_ALPHA = 0.5
+const NEIGHBOR_SHRINK = 20
 
 const args = new Set(process.argv.slice(2))
 const REFRESH = args.has("--refresh")
@@ -46,6 +54,7 @@ const NO_TMDB = args.has("--no-tmdb")
 
 const fmt = (n) => n.toLocaleString("en-US")
 const kb = (n) => `${(n / 1024).toFixed(1)} KB`
+const mb = (n) => `${(n / 1024 / 1024).toFixed(2)} MB`
 
 function check(label, actual, expected) {
   const ok = actual === expected
@@ -53,21 +62,20 @@ function check(label, actual, expected) {
   if (!ok) {
     throw new Error(
       `${label} is ${fmt(actual)}, expected ${fmt(expected)}. ` +
-        `If this is far larger, you downloaded ml-latest (33M ratings) instead of ml-latest-small.`,
+        `This build targets ml-32m specifically - a different MovieLens release will not match.`,
     )
   }
 }
 
 async function main() {
-  console.log("\nLoading ml-latest-small...")
-  const { movies, ratings } = loadRaw(DATA_DIR)
-
-  const uStats = userStatsFull(ratings)
-  const mStats = movieStats(ratings)
+  console.log("\nScanning ratings.csv (streamed - this is an 877 MB file, one pass)...")
+  const { stats: mStats, totalRatings, userCount } = await computeMovieStats(DATA_DIR)
 
   console.log("\nDataset sanity:")
-  check("users", uStats.size, EXPECTED.users)
-  check("ratings", ratings.length, EXPECTED.ratings)
+  check("users", userCount, EXPECTED.users)
+  check("ratings", totalRatings, EXPECTED.ratings)
+
+  const movies = loadMovies(DATA_DIR)
   check("movies", movies.length, EXPECTED.movies)
 
   console.log("\nRatings per movie (whole dataset):")
@@ -113,57 +121,75 @@ async function main() {
   const withPoster = catalog.filter((m) => details.get(m.tmdbId)?.posterPath).length
   const coverage = catalog.length ? (withPoster / catalog.length) * 100 : 0
   console.log(`  poster coverage: ${coverage.toFixed(1)}% (${fmt(withPoster)}/${fmt(catalog.length)})`)
-  if (!NO_TMDB && coverage < 97) {
-    console.warn(`  WARN poster coverage below 97% - check for TMDB errors in ${CACHE_DIR}`)
+  if (!NO_TMDB && coverage < 90) {
+    console.warn(`  WARN poster coverage below 90% - check for TMDB errors in ${CACHE_DIR}`)
   }
 
-  // ---- ratings matrix ------------------------------------------------------
+  // ---- item-item neighbour table --------------------------------------------
   const indexOfMovieId = new Map(catalog.map((m, i) => [m.movieId, i]))
-  const userIds = [...uStats.keys()].sort((a, b) => a - b)
-  const rowOfUser = new Map(userIds.map((id, i) => [id, i]))
 
-  const rows = userIds.map(() => [])
-  for (const { userId, movieId, rating } of ratings) {
-    const col = indexOfMovieId.get(movieId)
-    if (col === undefined) continue // outside the catalogue
-    rows[rowOfUser.get(userId)].push([col, rating])
-  }
-
-  const buf = encodeMatrix({
-    movieIds: catalog.map((m) => m.movieId),
-    userIds,
-    // Full-history norms and means - see the note in movielens.mjs.
-    fullNorm: userIds.map((id) => uStats.get(id).norm),
-    userMean: userIds.map((id) => uStats.get(id).mean),
-    rows,
+  const engineColOfMovieId = new Map() // movieId -> compact engine index
+  const engineCatalogIndex = [] // compact engine index -> catalog index
+  catalog.forEach((m, i) => {
+    if (m.ratingCount >= RECOMMENDABLE_MIN_RATINGS) {
+      engineColOfMovieId.set(m.movieId, engineCatalogIndex.length)
+      engineCatalogIndex.push(i)
+    }
   })
+  console.log(
+    `\nEngine items (>= ${RECOMMENDABLE_MIN_RATINGS} ratings): ${fmt(engineCatalogIndex.length)} ` +
+      `of ${fmt(catalog.length)} catalogue movies`,
+  )
 
-  const decoded = decodeMatrix(buf)
-  assertMatrixInvariants(decoded)
-  for (let i = 0; i < catalog.length; i++) {
-    if (decoded.movieIds[i] !== catalog[i].movieId) {
-      throw new Error(`movieIds[${i}] does not match catalogue order`)
+  console.log(
+    `\nTraining item-item similarity on the full rating population ` +
+      `(k=${NEIGHBOR_K}, alpha=${NEIGHBOR_ALPHA}, shrink=${NEIGHBOR_SHRINK})...`,
+  )
+  const trained = await buildNeighborTable(DATA_DIR, engineColOfMovieId, engineCatalogIndex.length, {
+    k: NEIGHBOR_K,
+    alpha: NEIGHBOR_ALPHA,
+    shrink: NEIGHBOR_SHRINK,
+    onProgress: (rows) => process.stdout.write(`\r  ${fmt(rows)} rows scanned`),
+  })
+  console.log(`\r  ${fmt(trained.ratingRowsScanned)} rows scanned, ${fmt(trained.likedUserCount)} users contributed a "liked" rating`)
+
+  // Expand from compact engine indices to catalogue indices - the shipped
+  // table is addressed by catalogue index everywhere, so the runtime never
+  // needs to know the engine/catalogue distinction existed.
+  const M = catalog.length
+  const neighborIdx = new Int32Array(M * NEIGHBOR_K).fill(-1)
+  const neighborSim = new Float32Array(M * NEIGHBOR_K)
+  for (let e = 0; e < engineCatalogIndex.length; e++) {
+    const catRow = engineCatalogIndex[e]
+    for (let t = 0; t < NEIGHBOR_K; t++) {
+      const nb = trained.nbrIdx[e * NEIGHBOR_K + t]
+      if (nb < 0) continue
+      neighborIdx[catRow * NEIGHBOR_K + t] = engineCatalogIndex[nb]
+      neighborSim[catRow * NEIGHBOR_K + t] = trained.nbrSim[e * NEIGHBOR_K + t]
     }
   }
-  console.log(
-    `\nMatrix: ${fmt(decoded.userCount)} users x ${fmt(decoded.movieCount)} movies, ` +
-      `${fmt(decoded.nnz)} ratings retained`,
-  )
-  console.log("  OK   binary invariants (rowPtr, ascending colIdx, value range, catalogue alignment)")
+
+  const buf = encodeNeighborTable({ movieCount: M, k: NEIGHBOR_K, neighborIdx, neighborSim })
+  const decoded = decodeNeighborTable(buf)
+  assertNeighborTableInvariants(decoded)
+  console.log("  OK   binary invariants (no self-neighbours, empty slots zeroed, indices in range)")
+
+  const withNeighbors = engineCatalogIndex.length
+  console.log(`\nNeighbour table: ${fmt(M)} catalogue movies x ${NEIGHBOR_K} neighbours (${fmt(withNeighbors)} rows populated)`)
 
   // ---- write ---------------------------------------------------------------
   mkdirSync(OUT_DIR, { recursive: true })
   for (const f of readdirSync(OUT_DIR)) {
-    if (/^ratings\..*\.bin$/.test(f)) rmSync(join(OUT_DIR, f))
+    if (/^itemnb\..*\.bin$/.test(f) || /^ratings\..*\.bin$/.test(f)) rmSync(join(OUT_DIR, f))
   }
 
   const hash = createHash("sha256").update(buf).digest("hex").slice(0, 8)
-  const binName = `ratings.${hash}.bin`
+  const binName = `itemnb.${hash}.bin`
   writeFileSync(join(OUT_DIR, binName), buf)
 
   const discoverIds = catalog.slice(0, DISCOVER_POOL).map((m) => m.movieId)
   const catalogJson = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     movies: catalog.map((m, i) => {
       const d = details.get(m.tmdbId) ?? { posterPath: null, overview: "" }
       return {
@@ -186,18 +212,18 @@ async function main() {
   writeFileSync(join(OUT_DIR, "catalog.json"), catalogBuf)
 
   const meta = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     builtAt: new Date().toISOString(),
-    ratingsFile: binName,
-    userCount: decoded.userCount,
-    movieCount: decoded.movieCount,
-    nnz: decoded.nnz,
+    neighborsFile: binName,
+    movieCount: M,
+    engineItemCount: withNeighbors,
+    neighborK: NEIGHBOR_K,
     minYear: MIN_YEAR,
     catalogMinRatings: CATALOG_MIN_RATINGS,
     recommendableMinRatings: RECOMMENDABLE_MIN_RATINGS,
     discoverPool: discoverIds,
     posterBase: "https://image.tmdb.org/t/p/",
-    source: "MovieLens ml-latest-small (GroupLens); details from TMDB",
+    source: "MovieLens ml-32m (GroupLens); details from TMDB",
   }
   const metaBuf = Buffer.from(JSON.stringify(meta))
   writeFileSync(join(OUT_DIR, "dataset-meta.json"), metaBuf)
@@ -208,8 +234,8 @@ async function main() {
   }
 
   const binGzip = gzipSync(buf).length
-  if (binGzip > 250 * 1024) {
-    throw new Error(`${binName} gzips to ${kb(binGzip)} - over the 250 KB budget, the filter did not apply`)
+  if (binGzip > 3 * 1024 * 1024) {
+    throw new Error(`${binName} gzips to ${mb(binGzip)} - over the 3 MB budget, something is off`)
   }
   console.log("\nDone.\n")
 }

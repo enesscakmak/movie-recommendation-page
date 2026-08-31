@@ -13,6 +13,32 @@ import type { CatalogMovie } from "./types"
  */
 const PRIOR_WEIGHT = 50
 
+// The full ranking only depends on (catalog, minRatings), both of which are
+// stable for the lifetime of a page load - the catalogue is fetched once and
+// never mutated. Recomputing a sort over the whole catalogue on every
+// Refresh click is wasted work; cache the ranked order and only re-slice.
+let cacheCatalog: CatalogMovie[] | null = null
+let cacheMinRatings = -1
+let cacheRanked: CatalogMovie[] = []
+
+function rankedPopularity(catalog: CatalogMovie[], minRatings: number): CatalogMovie[] {
+  if (cacheCatalog === catalog && cacheMinRatings === minRatings) return cacheRanked
+
+  const eligible = catalog.filter((m) => m.ratingCount >= minRatings)
+  let total = 0
+  let n = 0
+  for (const m of eligible) {
+    total += m.meanRating * m.ratingCount
+    n += m.ratingCount
+  }
+  const globalMean = n > 0 ? total / n : 3.5
+
+  cacheCatalog = catalog
+  cacheMinRatings = minRatings
+  cacheRanked = eligible.sort((a, b) => bayesian(b, globalMean) - bayesian(a, globalMean))
+  return cacheRanked
+}
+
 export function popularMovies(
   catalog: CatalogMovie[],
   {
@@ -22,24 +48,13 @@ export function popularMovies(
     offset = 0,
   }: { count?: number; minRatings?: number; excludeIds?: Set<number>; offset?: number } = {},
 ): CatalogMovie[] {
-  const eligible = catalog.filter(
-    (m) => m.ratingCount >= minRatings && !(excludeIds && excludeIds.has(m.movieId)),
-  )
-  if (eligible.length === 0) return []
+  const ranked = rankedPopularity(catalog, minRatings)
+  const filtered = excludeIds ? ranked.filter((m) => !excludeIds.has(m.movieId)) : ranked
+  if (filtered.length === 0) return []
 
-  let total = 0
-  let n = 0
-  for (const m of eligible) {
-    total += m.meanRating * m.ratingCount
-    n += m.ratingCount
-  }
-  const globalMean = n > 0 ? total / n : 3.5
-
-  const ranked = [...eligible].sort((a, b) => bayesian(b, globalMean) - bayesian(a, globalMean))
-
-  const pages = Math.max(1, Math.ceil(ranked.length / count))
+  const pages = Math.max(1, Math.ceil(filtered.length / count))
   const start = (offset % pages) * count
-  return ranked.slice(start, start + count)
+  return filtered.slice(start, start + count)
 }
 
 function bayesian(m: CatalogMovie, globalMean: number): number {

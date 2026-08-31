@@ -1,7 +1,7 @@
 /** Shared types for the recommender. No runtime code, no imports. */
 
 export interface CatalogMovie {
-  /** Position in the catalogue, and the column index into the ratings matrix. */
+  /** Position in the catalogue, and the index into the neighbour table. */
   index: number
   /** The MovieLens movieId - the stable identifier everything else keys on. */
   movieId: number
@@ -20,32 +20,30 @@ export interface CatalogMovie {
   meanRating: number
 }
 
-export interface RatingsMatrix {
-  userCount: number
+/**
+ * Item-item similarity, trained offline on the full MovieLens rating
+ * population. Row layout is fixed-width: movie `i`'s neighbours are always at
+ * `[i*k, i*k+k)` in both arrays, so there is no rowPtr to walk.
+ *
+ * Movies below the recommendable threshold have an all-empty row (every slot
+ * 0xFFFF) - see scripts/build-dataset.mjs.
+ */
+export interface ItemNeighbors {
   movieCount: number
-  /** Number of stored ratings. */
-  nnz: number
-  /** Catalogue index -> MovieLens movieId. */
-  movieIds: Uint32Array
-  userIds: Int32Array
-  /** L2 norm over each user's complete rating history, not just the catalogue. */
-  fullNorm: Float32Array
-  userMean: Float32Array
-  rowPtr: Uint32Array
-  /** Catalogue indices, strictly ascending within each row. */
-  colIdx: Uint16Array
-  /** Rating * 2, so 1..10 means 0.5..5 stars. */
-  values: Uint8Array
-  indexOfMovieId: Map<number, number>
+  k: number
+  /** Catalogue index per slot, or 0xFFFF for an empty slot. */
+  neighborIdx: Uint16Array
+  /** Similarity per slot, quantised 0..65535 for 0.0..1.0. */
+  neighborSim: Uint16Array
 }
 
 export interface DatasetMeta {
   schemaVersion: number
   builtAt: string
-  ratingsFile: string
-  userCount: number
+  neighborsFile: string
   movieCount: number
-  nnz: number
+  engineItemCount: number
+  neighborK: number
   minYear: number
   catalogMinRatings: number
   recommendableMinRatings: number
@@ -61,46 +59,36 @@ export interface UserRating {
   ratedAt: string
 }
 
-/** The visitor's ratings as a sparse vector over catalogue indices. */
-export interface UserVector {
-  idx: Uint16Array
-  val: Float32Array
-  norm: number
-  mean: number
-}
-
 export interface Recommendation {
   movieId: number
-  /** Ranking score: the predicted rating, shrunk toward zero by weak support. */
+  /** Ranking score after diversity re-ranking - not a calibrated star value. */
   score: number
-  /** Predicted rating on the 0.5-5 scale, for display. */
-  predicted: number
-  /** How many neighbours actually rated this film. */
+  /** How many of the visitor's own rated films voted for this one. */
   support: number
-  /** Row indices of the strongest contributing neighbours, for a "why?" affordance. */
-  topNeighbors: number[]
+  /** movieIds of the visitor's own rated films that drove this pick most, for a "because you liked..." line. */
+  because: number[]
 }
 
 export interface RecommendOptions {
-  /** Neighbourhood size. */
-  k?: number
   count?: number
-  /** Minimum co-rated films before a neighbour is trusted at all. */
-  minOverlap?: number
-  /** Demotes items backed by very few neighbours. */
-  shrinkage?: number
+  /** A rated film below this many stars contributes no signal (see LIKE_THRESHOLD in itemitem.mjs). */
+  likeThreshold?: number
+  /** Raw candidates considered before diversity re-ranking narrows to `count`. */
+  candidatePool?: number
+  /** MMR trade-off: 0 = pure relevance ranking, higher values push harder against picking near-duplicates of what's already chosen. */
+  diversity?: number
   /** A film needs this many MovieLens ratings before it may be recommended. */
   minRatingCount?: number
-  /** Page offset, so the Refresh button can show 11-20 rather than the same ten. */
+  /** Page offset, so the Refresh button can show a different ten rather than the same ones. */
   offset?: number
 }
 
 export const DEFAULT_OPTIONS: Required<Omit<RecommendOptions, "offset">> & { offset: number } = {
-  k: 30,
   count: 10,
-  minOverlap: 2,
-  shrinkage: 5,
-  minRatingCount: 20,
+  likeThreshold: 4.0,
+  candidatePool: 200,
+  diversity: 0.5,
+  minRatingCount: 100,
   offset: 0,
 }
 

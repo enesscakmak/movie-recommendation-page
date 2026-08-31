@@ -1,99 +1,157 @@
-import MovieGrid from "@/components/movie-grid"
-import type { MovieData } from "@/types/movie"
+"use client"
 
-// Sample movie data - in a real app, this would come from your ML backend
-const recommendedMovies: MovieData[] = [
-  {
-    id: 1,
-    title: "Inception",
-    description:
-      "A thief who steals corporate secrets through the use of dream-sharing technology is given the inverse task of planting an idea into the mind of a C.E.O.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 8.8,
-    year: 2010,
-    genre: "Sci-Fi",
-  },
-  {
-    id: 2,
-    title: "The Shawshank Redemption",
-    description:
-      "Two imprisoned men bond over a number of years, finding solace and eventual redemption through acts of common decency.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 9.3,
-    year: 1994,
-    genre: "Drama",
-  },
-  {
-    id: 3,
-    title: "The Dark Knight",
-    description:
-      "When the menace known as the Joker wreaks havoc and chaos on the people of Gotham, Batman must accept one of the greatest psychological and physical tests of his ability to fight injustice.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 9.0,
-    year: 2008,
-    genre: "Action",
-  },
-  {
-    id: 4,
-    title: "Pulp Fiction",
-    description:
-      "The lives of two mob hitmen, a boxer, a gangster and his wife, and a pair of diner bandits intertwine in four tales of violence and redemption.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 8.9,
-    year: 1994,
-    genre: "Crime",
-  },
-  {
-    id: 5,
-    title: "The Matrix",
-    description:
-      "A computer hacker learns from mysterious rebels about the true nature of his reality and his role in the war against its controllers.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 8.7,
-    year: 1999,
-    genre: "Sci-Fi",
-  },
-  {
-    id: 6,
-    title: "Goodfellas",
-    description:
-      "The story of Henry Hill and his life in the mob, covering his relationship with his wife Karen Hill and his mob partners Jimmy Conway and Tommy DeVito.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 8.7,
-    year: 1990,
-    genre: "Crime",
-  },
-  {
-    id: 7,
-    title: "Interstellar",
-    description: "A team of explorers travel through a wormhole in space in an attempt to ensure humanity's survival.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 8.6,
-    year: 2014,
-    genre: "Sci-Fi",
-  },
-  {
-    id: 8,
-    title: "Parasite",
-    description:
-      "Greed and class discrimination threaten the newly formed symbiotic relationship between the wealthy Park family and the destitute Kim clan.",
-    image: "/placeholder.svg?height=450&width=300",
-    rating: 8.6,
-    year: 2019,
-    genre: "Thriller",
-  },
-]
+import { useEffect, useMemo, useState } from "react"
+import Link from "next/link"
+import { Loader2, RefreshCw, Star } from "lucide-react"
+import MovieGrid from "@/components/movie-grid"
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
+import { useProfile } from "@/contexts/profile-context"
+import {
+  loadCatalog,
+  loadNeighborTable,
+  popularMovies,
+  recommend,
+  type CatalogMovie,
+  type ItemNeighbors,
+  type Recommendation,
+  type UserRating,
+  MIN_RATINGS_FOR_CF,
+  IDEAL_RATINGS,
+} from "@/lib/recommender"
 
 export default function Home() {
-  return (
-    <main className="container mx-auto px-4 py-8">
-      <section className="mb-10">
-        <h1 className="text-4xl font-bold mb-2">Your Movie Recommendations</h1>
-        <p className="text-muted-foreground">Based on your ratings, we think you'll enjoy these films</p>
-      </section>
+  const { profile, isLoading: profileLoading, rateMovie, skipMovie, advanceRecommendations, ratingCount } = useProfile()
 
-      <MovieGrid movies={recommendedMovies} />
-    </main>
+  const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)
+  const [neighbors, setNeighbors] = useState<ItemNeighbors | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadCatalog()
+      .then(setCatalog)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load the catalogue."))
+  }, [])
+
+  const personalizing = ratingCount >= MIN_RATINGS_FOR_CF
+  useEffect(() => {
+    if (!personalizing || neighbors) return
+    loadNeighborTable()
+      .then(setNeighbors)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load the recommender."))
+  }, [personalizing, neighbors])
+
+  const userRatings = useMemo<UserRating[]>(() => {
+    if (!profile) return []
+    return Object.entries(profile.ratings).map(([movieId, rating]) => ({
+      movieId: Number(movieId),
+      rating,
+      ratedAt: profile.ratedAt[movieId] ?? new Date(0).toISOString(),
+    }))
+  }, [profile])
+
+  const recs = useMemo<Recommendation[] | null>(() => {
+    if (!catalog || !neighbors || !personalizing) return null
+    return recommend(userRatings, profile?.skipped ?? [], neighbors, catalog, { offset: profile?.recommendationOffset ?? 0 })
+  }, [catalog, neighbors, personalizing, userRatings, profile?.skipped, profile?.recommendationOffset])
+
+  const catalogById = useMemo(() => {
+    const map = new Map<number, CatalogMovie>()
+    catalog?.forEach((m) => map.set(m.movieId, m))
+    return map
+  }, [catalog])
+
+  const popular = useMemo(() => {
+    if (!catalog || personalizing) return []
+    return popularMovies(catalog, { count: 12 })
+  }, [catalog, personalizing])
+
+  if (error) {
+    return (
+      <div className="container mx-auto px-4 py-16 text-center">
+        <p className="text-destructive">{error}</p>
+      </div>
+    )
+  }
+
+  if (!catalog || profileLoading) {
+    return (
+      <div className="flex items-center justify-center py-32">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    )
+  }
+
+  const displayMovies = personalizing
+    ? (recs ?? []).map((r) => catalogById.get(r.movieId)).filter((m): m is CatalogMovie => Boolean(m))
+    : popular
+
+  const becauseMap: Record<number, string[]> = {}
+  if (personalizing && recs) {
+    for (const r of recs) {
+      becauseMap[r.movieId] = r.because.map((id) => catalogById.get(id)?.title).filter((t): t is string => Boolean(t))
+    }
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-10">
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">
+            {personalizing ? "Recommended for you" : "Popular right now"}
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {personalizing
+              ? "Based on films similar to what you rated highly."
+              : `Rate a few movies to unlock personalised picks (${ratingCount}/${MIN_RATINGS_FOR_CF} so far).`}
+          </p>
+        </div>
+        {personalizing ? (
+          <Button variant="outline" onClick={advanceRecommendations} disabled={!neighbors}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            Refresh
+          </Button>
+        ) : (
+          <Button asChild>
+            <Link href="/rate">
+              <Star className="mr-2 h-4 w-4" />
+              Rate movies
+            </Link>
+          </Button>
+        )}
+      </div>
+
+      {!personalizing && ratingCount > 0 && (
+        <div className="mb-8 max-w-sm">
+          <Progress value={(ratingCount / MIN_RATINGS_FOR_CF) * 100} />
+        </div>
+      )}
+
+      {personalizing && !neighbors ? (
+        <div className="flex items-center justify-center py-24">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : displayMovies.length === 0 ? (
+        <p className="text-muted-foreground py-16 text-center">
+          {personalizing
+            ? "No recommendations cleared the bar yet - try rating a few more films, ideally outside one genre."
+            : "Nothing to show."}
+        </p>
+      ) : (
+        <MovieGrid
+          movies={displayMovies}
+          because={becauseMap}
+          onRate={(movieId, rating) => rateMovie(movieId, rating)}
+          onSkip={(movieId) => skipMovie(movieId)}
+        />
+      )}
+
+      {personalizing && recs && recs.length > 0 && (
+        <p className="mt-6 text-xs text-muted-foreground">
+          Rated {ratingCount} film{ratingCount === 1 ? "" : "s"} so far
+          {ratingCount < IDEAL_RATINGS ? ` - a few more (~${IDEAL_RATINGS}) sharpens these further.` : "."}
+        </p>
+      )}
+    </div>
   )
 }
-

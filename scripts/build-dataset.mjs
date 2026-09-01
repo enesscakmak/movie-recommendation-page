@@ -24,10 +24,10 @@ const DATA_DIR = join(HERE, "data", "ml-latest-small")
 const CACHE_DIR = join(HERE, ".cache", "tmdb")
 const OUT_DIR = join(ROOT, "public", "data")
 
-const CATALOG_MIN_RATINGS = 20 // searchable and rateable
-const RECOMMENDABLE_MIN_RATINGS = 100 // eligible for the item-item neighbour table
-const DISCOVER_POOL = 300 // the one-at-a-time rating queue
-const OVERVIEW_MAX = 200 // the card clamps to three lines anyway
+const CATALOG_MIN_RATINGS = 20
+const RECOMMENDABLE_MIN_RATINGS = 100
+const DISCOVER_POOL = 300
+const OVERVIEW_MAX = 200
 const NEIGHBOR_K = 20
 const NEIGHBOR_ALPHA = 0.5
 const NEIGHBOR_SHRINK = 20
@@ -109,8 +109,8 @@ async function main() {
 
   const indexOfMovieId = new Map(catalog.map((m, i) => [m.movieId, i]))
 
-  const engineColOfMovieId = new Map() // movieId -> compact engine index
-  const engineCatalogIndex = [] // compact engine index -> catalog index
+  const engineColOfMovieId = new Map()
+  const engineCatalogIndex = []
   catalog.forEach((m, i) => {
     if (m.ratingCount >= RECOMMENDABLE_MIN_RATINGS) {
       engineColOfMovieId.set(m.movieId, engineCatalogIndex.length)

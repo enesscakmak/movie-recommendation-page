@@ -2,20 +2,18 @@ import type { CatalogMovie } from "./types"
 
 const PRIOR_WEIGHT = 50
 
-// Curated first-run lineup for visitors with no ratings yet, in display order.
-// Falls back to the popularity ranking below once these run out or get rated/skipped.
 export const CURATED_HOME_IDS: number[] = [
-  8961, // The Incredibles
-  106782, // The Wolf of Wall Street
-  58559, // The Dark Knight
-  4993, // The Lord of the Rings: The Fellowship of the Ring
-  527, // Schindler's List
-  296, // Pulp Fiction
-  356, // Forrest Gump
-  1682, // The Truman Show
-  2959, // Fight Club
-  2571, // The Matrix
-  1210, // Star Wars: Episode VI - Return of the Jedi (earliest Star Wars film in the catalog)
+  8961,
+  106782,
+  58559,
+  4993,
+  527,
+  296,
+  356,
+  1682,
+  2959,
+  2571,
+  1210,
 ]
 
 let cacheCatalog: CatalogMovie[] | null = null

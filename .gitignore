@@ -27,6 +27,12 @@ yarn-error.log*
 .open-next/
 .dev.vars
 
+# claude code (local tooling config)
+.claude/
+
+# local working notes, never shipped
+HANDOFF.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

@@ -38,11 +38,11 @@ export async function* streamRatings(dir) {
       if (nl === -1) break
       const line = buf.slice(start, nl)
       start = nl + 1
-      if (first) { first = false; continue } // header row
+      if (first) { first = false; continue }
       const c1 = line.indexOf(",")
       const c2 = line.indexOf(",", c1 + 1)
       const c3 = line.indexOf(",", c2 + 1)
-      if (c3 === -1) continue // blank trailing line
+      if (c3 === -1) continue
       yield {
         userId: +line.slice(0, c1),
         movieId: +line.slice(c1 + 1, c2),

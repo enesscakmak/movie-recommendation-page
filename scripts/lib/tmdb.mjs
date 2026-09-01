@@ -68,7 +68,7 @@ export async function fetchDetails(tmdbIds, { apiKey, cacheDir, refresh = false,
         try {
           data = JSON.parse(readFileSync(path, "utf8"))
         } catch {
-          data = undefined // corrupt cache entry; refetch
+          data = undefined
         }
       }
 

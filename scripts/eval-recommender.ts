@@ -58,7 +58,7 @@ async function goldenTest(catalog: CatalogMovie[], nb: ItemNeighbors, meta: Data
   console.log(`     recomputing co-occurrence for: ${sample.map((m) => m.title).join(", ")}`)
 
   const likeCount = new Map<number, number>()
-  const cooc = new Map<number, Map<number, number>>() // target col -> (other col -> count)
+  const cooc = new Map<number, Map<number, number>>()
   for (const c of targetCols) cooc.set(c, new Map())
 
   let rows = 0
@@ -119,9 +119,9 @@ async function goldenTest(catalog: CatalogMovie[], nb: ItemNeighbors, meta: Data
 
 async function sampleTestUsers(catalog: CatalogMovie[], count: number) {
   const colOfMovieId = new Map(catalog.map((m) => [m.movieId, m.index]))
-  const byUser = new Map<number, Array<[number, number]>>() // userId -> [movieId, rating][]
+  const byUser = new Map<number, Array<[number, number]>>()
   for await (const { userId, movieId, rating } of streamRatings(RAW_DIR)) {
-    if (userId % 40 !== 0) continue // subsample the population, not the per-user history
+    if (userId % 40 !== 0) continue
     if (!colOfMovieId.has(movieId)) continue
     let arr = byUser.get(userId)
     if (!arr) { arr = []; byUser.set(userId, arr) }

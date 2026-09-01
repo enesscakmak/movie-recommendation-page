@@ -85,6 +85,9 @@
     "onlyBuiltDependencies": [
       "esbuild",
       "workerd"
-    ]
+    ],
+    "overrides": {
+      "sharp": "file:./vendor/empty-sharp"
+    }
   }
 }

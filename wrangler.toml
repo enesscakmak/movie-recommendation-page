@@ -11,3 +11,7 @@ binding = "ASSETS"
 binding = "DB"
 database_name = "movie-recommender"
 database_id = "d85e3455-f06c-4695-bf5d-3c4d260b41be"
+
+[[routes]]
+pattern = "movie.enescakmak.net"
+custom_domain = true

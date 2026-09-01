@@ -15,3 +15,18 @@ database_id = "d85e3455-f06c-4695-bf5d-3c4d260b41be"
 [[routes]]
 pattern = "movie.enescakmak.net"
 custom_domain = true
+
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1

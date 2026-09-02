@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useState } from "react"
 import Image from "next/image"
 import Link from "next/link"
-import { ExternalLink, EyeOff, Loader2, Sparkles } from "lucide-react"
+import { Bookmark, ExternalLink, EyeOff, Loader2, Sparkles } from "lucide-react"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from "@/components/ui/dialog"
 import { StarRating } from "@/components/rating/star-rating"
 import { MovieDetailDialog } from "@/components/movie/movie-detail-dialog"
 import { useProfile } from "@/contexts/profile-context"
+import { cn } from "@/lib/utils"
 import type { CatalogMovie, ItemNeighbors } from "@/lib/recommender"
 import { posterUrl, imdbUrl, useOverview, loadCatalog, loadNeighborTable, similarTo } from "@/lib/recommender"
 
@@ -18,10 +19,20 @@ interface MovieCardProps {
   userRating?: number
   onRate?: (rating: number) => void
   onSkip?: () => void
+  isWatchlisted?: boolean
+  onToggleWatchlist?: () => void
   because?: string[]
 }
 
-export default function MovieCard({ movie, userRating, onRate, onSkip, because }: MovieCardProps) {
+export default function MovieCard({
+  movie,
+  userRating,
+  onRate,
+  onSkip,
+  isWatchlisted,
+  onToggleWatchlist,
+  because,
+}: MovieCardProps) {
   const poster = posterUrl(movie.posterPath)
   const overview = useOverview(movie.index)
   const [detailOpen, setDetailOpen] = useState(false)
@@ -113,19 +124,34 @@ export default function MovieCard({ movie, userRating, onRate, onSkip, because }
           </DialogContent>
         </Dialog>
       </CardContent>
-      {(onRate || onSkip) && (
+      {(onRate || onSkip || onToggleWatchlist) && (
         <CardFooter className="px-4 pb-4 pt-0 flex items-center justify-between gap-2">
           <StarRating value={userRating ?? 0} size="sm" onChange={onRate} />
-          {onSkip && (
-            <button
-              type="button"
-              onClick={onSkip}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              <EyeOff className="h-3.5 w-3.5" />
-              Haven&apos;t seen it
-            </button>
-          )}
+          <div className="flex items-center gap-3">
+            {onToggleWatchlist && (
+              <button
+                type="button"
+                onClick={onToggleWatchlist}
+                className={cn(
+                  "flex items-center gap-1 text-xs hover:text-foreground",
+                  isWatchlisted ? "text-foreground" : "text-muted-foreground",
+                )}
+                aria-label={isWatchlisted ? `Remove ${movie.title} from your watchlist` : `Add ${movie.title} to your watchlist`}
+              >
+                <Bookmark className={cn("h-3.5 w-3.5", isWatchlisted && "fill-current")} />
+              </button>
+            )}
+            {onSkip && (
+              <button
+                type="button"
+                onClick={onSkip}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+              >
+                <EyeOff className="h-3.5 w-3.5" />
+                Haven&apos;t seen it
+              </button>
+            )}
+          </div>
         </CardFooter>
       )}
     </Card>
@@ -133,7 +159,7 @@ export default function MovieCard({ movie, userRating, onRate, onSkip, because }
 }
 
 function SimilarMovies({ movie }: { movie: CatalogMovie }) {
-  const { profile, rateMovie, skipMovie } = useProfile()
+  const { profile, rateMovie, skipMovie, watchlistMovie, unwatchlistMovie } = useProfile()
   const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)
   const [neighbors, setNeighbors] = useState<ItemNeighbors | null>(null)
 
@@ -174,6 +200,10 @@ function SimilarMovies({ movie }: { movie: CatalogMovie }) {
           because={[movie.title]}
           onRate={(rating) => rateMovie(m.movieId, rating)}
           onSkip={() => skipMovie(m.movieId)}
+          isWatchlisted={profile?.watchlist.includes(m.movieId)}
+          onToggleWatchlist={() =>
+            profile?.watchlist.includes(m.movieId) ? unwatchlistMovie(m.movieId) : watchlistMovie(m.movieId)
+          }
         />
       ))}
     </div>

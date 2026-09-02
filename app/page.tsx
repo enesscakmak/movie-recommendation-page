@@ -25,7 +25,16 @@ import {
 } from "@/lib/recommender"
 
 export default function Home() {
-  const { profile, isLoading: profileLoading, rateMovie, skipMovie, advanceRecommendations, ratingCount } = useProfile()
+  const {
+    profile,
+    isLoading: profileLoading,
+    rateMovie,
+    skipMovie,
+    watchlistMovie,
+    unwatchlistMovie,
+    advanceRecommendations,
+    ratingCount,
+  } = useProfile()
 
   const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)
   const [neighbors, setNeighbors] = useState<ItemNeighbors | null>(null)
@@ -68,9 +77,14 @@ export default function Home() {
 
   const excludeIds = useMemo(() => {
     const ids = new Set<number>(profile?.skipped ?? [])
-    if (profile) Object.keys(profile.ratings).forEach((id) => ids.add(Number(id)))
+    if (profile) {
+      Object.keys(profile.ratings).forEach((id) => ids.add(Number(id)))
+      profile.watchlist.forEach((id) => ids.add(id))
+    }
     return ids
   }, [profile])
+
+  const watchlistSet = useMemo(() => new Set(profile?.watchlist ?? []), [profile])
 
   const ratedIds = useMemo(() => new Set(Object.keys(profile?.ratings ?? {}).map(Number)), [profile])
 
@@ -176,8 +190,12 @@ export default function Home() {
           movies={displayMovies}
           ratings={profile?.ratings}
           because={becauseMap}
+          watchlist={watchlistSet}
           onRate={(movieId, rating) => rateMovie(movieId, rating)}
           onSkip={(movieId) => skipMovie(movieId)}
+          onToggleWatchlist={(movieId) =>
+            watchlistSet.has(movieId) ? unwatchlistMovie(movieId) : watchlistMovie(movieId)
+          }
         />
       )}
 

@@ -4,16 +4,18 @@ export interface RatingsPayload {
   ratings: Record<string, number>
   ratedAt: Record<string, string>
   skipped: number[]
+  watchlist: number[]
 }
 
 export async function getRatingsPayload(db: D1Database, userId: string): Promise<RatingsPayload> {
-  const [ratingRows, skipRows] = await Promise.all([
+  const [ratingRows, skipRows, watchlistRows] = await Promise.all([
     db.prepare("SELECT movie_id, rating, rated_at FROM ratings WHERE user_id = ?").bind(userId).all<{
       movie_id: number
       rating: number
       rated_at: string
     }>(),
     db.prepare("SELECT movie_id FROM skips WHERE user_id = ?").bind(userId).all<{ movie_id: number }>(),
+    db.prepare("SELECT movie_id FROM watchlist WHERE user_id = ?").bind(userId).all<{ movie_id: number }>(),
   ])
 
   const ratings: Record<string, number> = {}
@@ -23,7 +25,12 @@ export async function getRatingsPayload(db: D1Database, userId: string): Promise
     ratedAt[row.movie_id] = row.rated_at
   }
 
-  return { ratings, ratedAt, skipped: skipRows.results.map((r) => r.movie_id) }
+  return {
+    ratings,
+    ratedAt,
+    skipped: skipRows.results.map((r) => r.movie_id),
+    watchlist: watchlistRows.results.map((r) => r.movie_id),
+  }
 }
 
 export async function setRating(db: D1Database, userId: string, movieId: number, rating: number): Promise<void> {
@@ -36,6 +43,7 @@ export async function setRating(db: D1Database, userId: string, movieId: number,
         )
         .bind(userId, movieId, rating, new Date().toISOString()),
       db.prepare("DELETE FROM skips WHERE user_id = ? AND movie_id = ?").bind(userId, movieId),
+      db.prepare("DELETE FROM watchlist WHERE user_id = ? AND movie_id = ?").bind(userId, movieId),
     ])
   } else {
     await db.prepare("DELETE FROM ratings WHERE user_id = ? AND movie_id = ?").bind(userId, movieId).run()
@@ -51,9 +59,27 @@ export async function setSkip(db: D1Database, userId: string, movieId: number): 
       )
       .bind(userId, movieId, new Date().toISOString()),
     db.prepare("DELETE FROM ratings WHERE user_id = ? AND movie_id = ?").bind(userId, movieId),
+    db.prepare("DELETE FROM watchlist WHERE user_id = ? AND movie_id = ?").bind(userId, movieId),
   ])
 }
 
 export async function removeSkip(db: D1Database, userId: string, movieId: number): Promise<void> {
   await db.prepare("DELETE FROM skips WHERE user_id = ? AND movie_id = ?").bind(userId, movieId).run()
+}
+
+export async function addToWatchlist(db: D1Database, userId: string, movieId: number): Promise<void> {
+  await db.batch([
+    db
+      .prepare(
+        "INSERT INTO watchlist (user_id, movie_id, added_at) VALUES (?, ?, ?) " +
+          "ON CONFLICT(user_id, movie_id) DO UPDATE SET added_at = excluded.added_at",
+      )
+      .bind(userId, movieId, new Date().toISOString()),
+    db.prepare("DELETE FROM ratings WHERE user_id = ? AND movie_id = ?").bind(userId, movieId),
+    db.prepare("DELETE FROM skips WHERE user_id = ? AND movie_id = ?").bind(userId, movieId),
+  ])
+}
+
+export async function removeFromWatchlist(db: D1Database, userId: string, movieId: number): Promise<void> {
+  await db.prepare("DELETE FROM watchlist WHERE user_id = ? AND movie_id = ?").bind(userId, movieId).run()
 }

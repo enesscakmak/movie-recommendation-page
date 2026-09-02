@@ -53,6 +53,14 @@ export interface SimilarMovie {
   similarity: number
 }
 
+export interface ExplainedContribution {
+  movieId: number
+  title: string
+  rating: number
+  similarity: number
+  contribution: number
+}
+
 export interface DiscoveryFilter {
   genres: string[]
   minYear?: number

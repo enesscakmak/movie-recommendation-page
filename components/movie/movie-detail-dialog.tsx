@@ -9,6 +9,7 @@ import { StarRating } from "@/components/rating/star-rating"
 import { useMovieDetails } from "@/lib/movie-details"
 import type { CatalogMovie } from "@/lib/recommender"
 import { posterUrl, imdbUrl } from "@/lib/recommender"
+import { WhyThis } from "@/components/movie/why-this"
 
 interface MovieDetailDialogProps {
   movie: CatalogMovie
@@ -103,6 +104,8 @@ export function MovieDetailDialog({ movie, open, onOpenChange, overview, userRat
             <p className="text-sm text-muted-foreground">{plot}</p>
           </div>
         )}
+
+        <WhyThis movie={movie} />
 
         {details && details.actors.length > 0 && (
           <div>

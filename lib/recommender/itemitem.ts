@@ -1,5 +1,13 @@
 
-import type { CatalogMovie, ItemNeighbors, Recommendation, RecommendOptions, SimilarMovie, UserRating } from "./types"
+import type {
+  CatalogMovie,
+  ExplainedContribution,
+  ItemNeighbors,
+  Recommendation,
+  RecommendOptions,
+  SimilarMovie,
+  UserRating,
+} from "./types"
 import { DEFAULT_OPTIONS } from "./types"
 import { passesFilter } from "./filters"
 import { popularMovies } from "./popular"
@@ -7,21 +15,21 @@ import { popularMovies } from "./popular"
 const SIM_SCALE = 65535
 const EMPTY = 0xffff
 
-export function itemSimilarity(nb: ItemNeighbors, a: number, b: number): number {
+function directedSimilarity(nb: ItemNeighbors, from: number, to: number): number {
   const k = nb.k
   for (let t = 0; t < k; t++) {
-    const slot = a * k + t
+    const slot = from * k + t
     const idx = nb.neighborIdx[slot]
     if (idx === EMPTY) break
-    if (idx === b) return nb.neighborSim[slot] / SIM_SCALE
-  }
-  for (let t = 0; t < k; t++) {
-    const slot = b * k + t
-    const idx = nb.neighborIdx[slot]
-    if (idx === EMPTY) break
-    if (idx === a) return nb.neighborSim[slot] / SIM_SCALE
+    if (idx === to) return nb.neighborSim[slot] / SIM_SCALE
   }
   return 0
+}
+
+export function itemSimilarity(nb: ItemNeighbors, a: number, b: number): number {
+  const forward = directedSimilarity(nb, a, b)
+  if (forward > 0) return forward
+  return directedSimilarity(nb, b, a)
 }
 
 const movieIdIndexCache = new WeakMap<CatalogMovie[], Map<number, number>>()
@@ -189,6 +197,32 @@ export function similarTo(index: number, nb: ItemNeighbors, catalog: CatalogMovi
     out.push({ movieId: movie.movieId, similarity: nb.neighborSim[slot] / SIM_SCALE })
   }
   return out
+}
+
+export function explain(
+  targetIndex: number,
+  ratings: UserRating[],
+  nb: ItemNeighbors,
+  catalog: CatalogMovie[],
+  limit = 5,
+): ExplainedContribution[] {
+  const indexOfMovieId = indexOfMovieIdFor(catalog)
+  const contributions: ExplainedContribution[] = []
+
+  for (const r of ratings) {
+    if (r.rating < DEFAULT_OPTIONS.likeThreshold && r.rating > DEFAULT_OPTIONS.dislikeThreshold) continue
+    const sourceIndex = indexOfMovieId.get(r.movieId)
+    if (sourceIndex === undefined) continue
+    const similarity = directedSimilarity(nb, sourceIndex, targetIndex)
+    if (similarity <= 0) continue
+    const contribution = (r.rating - 3) * similarity
+    if (contribution <= 0) continue
+    const source = catalog[sourceIndex]
+    contributions.push({ movieId: r.movieId, title: source.title, rating: r.rating, similarity, contribution })
+  }
+
+  contributions.sort((a, b) => b.contribution - a.contribution)
+  return contributions.slice(0, limit)
 }
 
 export function hasUsableNeighbors(

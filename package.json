@@ -12,6 +12,7 @@
     "start": "next start",
     "lint": "next lint",
     "build:dataset": "node --max-old-space-size=6144 --env-file=.env scripts/build-dataset.mjs",
+    "build:stats": "node scripts/build-population-stats.mjs",
     "eval": "tsx scripts/eval-recommender.ts"
   },
   "dependencies": {

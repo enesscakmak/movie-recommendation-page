@@ -61,6 +61,15 @@ export interface ExplainedContribution {
   contribution: number
 }
 
+export interface PopulationStats {
+  schemaVersion: number
+  builtAt: string
+  totalGenreWeight: number
+  totalDecadeWeight: number
+  genres: Record<string, number>
+  decades: Record<string, number>
+}
+
 export interface DiscoveryFilter {
   genres: string[]
   minYear?: number

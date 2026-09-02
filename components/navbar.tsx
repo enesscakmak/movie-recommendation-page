@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { Bookmark, Film, Star } from "lucide-react"
+import { BarChart3, Bookmark, Film, Star } from "lucide-react"
 import { signIn } from "next-auth/react"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { Button } from "@/components/ui/button"
@@ -37,6 +37,13 @@ export default function Navbar() {
             >
               <Bookmark className="h-4 w-4" />
               Watchlist
+            </Link>
+            <Link
+              href="/stats"
+              className="text-sm font-medium transition-colors hover:text-primary flex items-center gap-1"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Taste Profile
             </Link>
           </nav>
         </div>

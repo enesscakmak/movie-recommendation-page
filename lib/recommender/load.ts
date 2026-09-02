@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import type { CatalogMovie, DatasetMeta, ItemNeighbors } from "./types"
+import type { CatalogMovie, DatasetMeta, ItemNeighbors, PopulationStats } from "./types"
 
 const MAGIC = "MIN1"
 
@@ -56,6 +56,7 @@ let catalogPromise: Promise<CatalogMovie[]> | null = null
 let metaPromise: Promise<DatasetMeta> | null = null
 let neighborsPromise: Promise<ItemNeighbors> | null = null
 let overviewsPromise: Promise<string[]> | null = null
+let populationPromise: Promise<PopulationStats> | null = null
 
 async function fetchJson<T>(path: string): Promise<T> {
   const res = await fetch(path)
@@ -86,6 +87,11 @@ export function loadNeighborTable(): Promise<ItemNeighbors> {
 export function loadOverviews(): Promise<string[]> {
   overviewsPromise ??= fetchJson<string[]>("/data/overviews.json")
   return overviewsPromise
+}
+
+export function loadPopulation(): Promise<PopulationStats> {
+  populationPromise ??= fetchJson<PopulationStats>("/data/population.json")
+  return populationPromise
 }
 
 export function useOverview(index: number): string {

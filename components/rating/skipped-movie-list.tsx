@@ -1,8 +1,10 @@
 "use client"
 
+import { useState } from "react"
 import { X } from "lucide-react"
 import { StarRating } from "@/components/rating/star-rating"
 import { Button } from "@/components/ui/button"
+import { MovieDetailDialog } from "@/components/movie/movie-detail-dialog"
 import type { CatalogMovie } from "@/lib/recommender"
 import { posterUrl } from "@/lib/recommender"
 
@@ -13,6 +15,8 @@ interface SkippedMovieListProps {
 }
 
 export function SkippedMovieList({ movies, onRate, onUnskip }: SkippedMovieListProps) {
+  const [openMovieId, setOpenMovieId] = useState<number | null>(null)
+  const openMovie = movies.find((m) => m.movieId === openMovieId) ?? null
   if (movies.length === 0) {
     return (
       <div className="rounded-md border p-8 text-center">
@@ -29,9 +33,14 @@ export function SkippedMovieList({ movies, onRate, onUnskip }: SkippedMovieListP
           const poster = posterUrl(movie.posterPath, "w185")
           return (
             <div key={movie.movieId} className="flex items-center gap-4 rounded-md border p-3">
-              <div className="h-16 w-12 flex-shrink-0 overflow-hidden rounded bg-muted">
+              <button
+                type="button"
+                onClick={() => setOpenMovieId(movie.movieId)}
+                className="h-16 w-12 flex-shrink-0 overflow-hidden rounded bg-muted"
+                aria-label={`View details for ${movie.title}`}
+              >
                 {poster && <img src={poster} alt={movie.title} className="h-full w-full object-cover" />}
-              </div>
+              </button>
               <div className="flex-1 min-w-0">
                 <h4 className="font-medium truncate">{movie.title}</h4>
                 <p className="text-sm text-muted-foreground">{movie.year}</p>
@@ -50,6 +59,15 @@ export function SkippedMovieList({ movies, onRate, onUnskip }: SkippedMovieListP
           )
         })}
       </div>
+      {openMovie && (
+        <MovieDetailDialog
+          movie={openMovie}
+          open={true}
+          onOpenChange={(open) => !open && setOpenMovieId(null)}
+          userRating={0}
+          onRate={(rating) => onRate(openMovie.movieId, rating)}
+        />
+      )}
     </div>
   )
 }

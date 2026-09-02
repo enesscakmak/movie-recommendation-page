@@ -80,7 +80,7 @@ export default function RatedMoviesPage() {
         </TabsList>
 
         <TabsContent value="ratings" className="pt-4">
-          <RatedMovieList ratings={ratedEntries} onRemoveRating={(movieId) => rateMovie(movieId, 0)} />
+          <RatedMovieList ratings={ratedEntries} onRate={rateMovie} onRemoveRating={(movieId) => rateMovie(movieId, 0)} />
         </TabsContent>
 
         <TabsContent value="didnt-watch" className="pt-4">

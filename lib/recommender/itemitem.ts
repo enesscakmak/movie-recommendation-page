@@ -1,6 +1,8 @@
 
 import type { CatalogMovie, ItemNeighbors, Recommendation, RecommendOptions, SimilarMovie, UserRating } from "./types"
 import { DEFAULT_OPTIONS } from "./types"
+import { passesFilter } from "./filters"
+import { popularMovies } from "./popular"
 
 const SIM_SCALE = 65535
 const EMPTY = 0xffff
@@ -119,6 +121,14 @@ export function recommend(
 
   const { score, support, because1, because2 } = scoreAll(ratings, nb, catalog, opts.likeThreshold, opts.dislikeThreshold)
 
+  let hasPositiveSignal = false
+  for (let i = 0; i < support.length; i++) {
+    if (support[i] > 0 && score[i] > 0) {
+      hasPositiveSignal = true
+      break
+    }
+  }
+
   const excluded = new Set<number>()
   for (const r of ratings) excluded.add(r.movieId)
   for (const id of skipped) excluded.add(id)
@@ -130,6 +140,7 @@ export function recommend(
     const movie = catalog[col]
     if (!movie || excluded.has(movie.movieId)) continue
     if (movie.ratingCount < opts.minRatingCount) continue
+    if (opts.filter && !passesFilter(movie, opts.filter)) continue
     raw.push([col, score[col]])
   }
   raw.sort((a, b) => b[1] - a[1])
@@ -141,12 +152,29 @@ export function recommend(
   const start = (opts.offset % pages) * opts.count
   const page = ranked.slice(start, start + opts.count)
 
-  return page.map((col) => {
+  const results = page.map((col) => {
     const because: number[] = []
     if (because1[col] >= 0) because.push(catalog[because1[col]].movieId)
     if (because2[col] >= 0) because.push(catalog[because2[col]].movieId)
     return { movieId: catalog[col].movieId, score: score[col], support: support[col], because }
   })
+
+  if (hasPositiveSignal && results.length < opts.count) {
+    const backfillExclude = new Set(excluded)
+    for (const r of results) backfillExclude.add(r.movieId)
+    const backfill = popularMovies(catalog, {
+      count: opts.count - results.length,
+      minRatings: opts.minRatingCount,
+      excludeIds: backfillExclude,
+      filter: opts.filter,
+      offset: opts.offset,
+    })
+    for (const movie of backfill) {
+      results.push({ movieId: movie.movieId, score: 0, support: 0, because: [] })
+    }
+  }
+
+  return results
 }
 
 export function similarTo(index: number, nb: ItemNeighbors, catalog: CatalogMovie[], count = 10): SimilarMovie[] {

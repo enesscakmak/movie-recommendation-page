@@ -53,6 +53,13 @@ export interface SimilarMovie {
   similarity: number
 }
 
+export interface DiscoveryFilter {
+  genres: string[]
+  minYear?: number
+  maxYear?: number
+  minMeanRating?: number
+}
+
 export interface RecommendOptions {
   count?: number
   likeThreshold?: number
@@ -61,9 +68,13 @@ export interface RecommendOptions {
   diversity?: number
   minRatingCount?: number
   offset?: number
+  filter?: DiscoveryFilter
 }
 
-export const DEFAULT_OPTIONS: Required<Omit<RecommendOptions, "offset">> & { offset: number } = {
+export const DEFAULT_OPTIONS: Required<Omit<RecommendOptions, "offset" | "filter">> & {
+  offset: number
+  filter?: DiscoveryFilter
+} = {
   count: 10,
   likeThreshold: 4.0,
   dislikeThreshold: 2.0,

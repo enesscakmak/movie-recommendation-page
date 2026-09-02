@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { Loader2, RefreshCw, Star } from "lucide-react"
 import MovieGrid from "@/components/movie-grid"
+import { FilterBar, EMPTY_FILTER_STATE, isFilterStateActive, type FilterState } from "@/components/discovery/filter-bar"
 import { MovieSearch } from "@/components/rating/movie-search"
 import { StarRating } from "@/components/rating/star-rating"
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,7 @@ import {
   popularMovies,
   recommend,
   type CatalogMovie,
+  type DiscoveryFilter,
   type ItemNeighbors,
   type Recommendation,
   type UserRating,
@@ -40,12 +42,45 @@ export default function Home() {
   const [neighbors, setNeighbors] = useState<ItemNeighbors | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchSelected, setSearchSelected] = useState<CatalogMovie | null>(null)
+  const [filterState, setFilterState] = useState<FilterState>(EMPTY_FILTER_STATE)
 
   useEffect(() => {
     loadCatalog()
       .then(setCatalog)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load the catalogue."))
   }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const genres = params.get("genres")
+    const decade = params.get("decade")
+    const minRating = params.get("minRating")
+    const initial: FilterState = {
+      genres: genres ? genres.split(",").filter(Boolean) : [],
+      decade: decade ? Number(decade) : null,
+      minRating: minRating ? Number(minRating) : 0,
+    }
+    if (isFilterStateActive(initial)) setFilterState(initial)
+  }, [])
+
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (filterState.genres.length > 0) params.set("genres", filterState.genres.join(","))
+    if (filterState.decade !== null) params.set("decade", String(filterState.decade))
+    if (filterState.minRating > 0) params.set("minRating", String(filterState.minRating))
+    const qs = params.toString()
+    window.history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname)
+  }, [filterState])
+
+  const discoveryFilter = useMemo<DiscoveryFilter | undefined>(() => {
+    if (!isFilterStateActive(filterState)) return undefined
+    return {
+      genres: filterState.genres,
+      minYear: filterState.decade !== null ? filterState.decade : undefined,
+      maxYear: filterState.decade !== null ? filterState.decade + 9 : undefined,
+      minMeanRating: filterState.minRating > 0 ? filterState.minRating : undefined,
+    }
+  }, [filterState])
 
   const personalizing = ratingCount >= MIN_RATINGS_FOR_CF
   useEffect(() => {
@@ -66,8 +101,12 @@ export default function Home() {
 
   const recs = useMemo<Recommendation[] | null>(() => {
     if (!catalog || !neighbors || !personalizing) return null
-    return recommend(userRatings, profile?.skipped ?? [], neighbors, catalog, { offset: profile?.recommendationOffset ?? 0 })
-  }, [catalog, neighbors, personalizing, userRatings, profile?.skipped, profile?.recommendationOffset])
+    return recommend(userRatings, profile?.skipped ?? [], neighbors, catalog, {
+      count: 12,
+      offset: profile?.recommendationOffset ?? 0,
+      filter: discoveryFilter,
+    })
+  }, [catalog, neighbors, personalizing, userRatings, profile?.skipped, profile?.recommendationOffset, discoveryFilter])
 
   const catalogById = useMemo(() => {
     const map = new Map<number, CatalogMovie>()
@@ -90,8 +129,8 @@ export default function Home() {
 
   const popular = useMemo(() => {
     if (!catalog || personalizing) return []
-    return popularMovies(catalog, { count: 12, excludeIds, curatedIds: CURATED_HOME_IDS })
-  }, [catalog, personalizing, excludeIds])
+    return popularMovies(catalog, { count: 12, excludeIds, curatedIds: CURATED_HOME_IDS, filter: discoveryFilter })
+  }, [catalog, personalizing, excludeIds, discoveryFilter])
 
   if (error) {
     return (
@@ -175,16 +214,27 @@ export default function Home() {
         )}
       </div>
 
+      <FilterBar catalog={catalog} value={filterState} onChange={setFilterState} />
+
       {personalizing && !neighbors ? (
         <div className="flex items-center justify-center py-24">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       ) : displayMovies.length === 0 ? (
-        <p className="text-muted-foreground py-16 text-center">
-          {personalizing
-            ? "No recommendations cleared the bar yet - try rating a few more films, ideally outside one genre."
-            : "Nothing to show."}
-        </p>
+        <div className="py-16 text-center space-y-3">
+          <p className="text-muted-foreground">
+            {isFilterStateActive(filterState)
+              ? "No movies match these filters."
+              : personalizing
+                ? "No recommendations cleared the bar yet - try rating a few more films, ideally outside one genre."
+                : "Nothing to show."}
+          </p>
+          {isFilterStateActive(filterState) && (
+            <Button variant="outline" size="sm" onClick={() => setFilterState(EMPTY_FILTER_STATE)}>
+              Clear filters
+            </Button>
+          )}
+        </div>
       ) : (
         <MovieGrid
           movies={displayMovies}

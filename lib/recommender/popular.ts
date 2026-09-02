@@ -1,4 +1,5 @@
-import type { CatalogMovie } from "./types"
+import type { CatalogMovie, DiscoveryFilter } from "./types"
+import { passesFilter } from "./filters"
 
 const PRIOR_WEIGHT = 50
 
@@ -46,17 +47,19 @@ export function popularMovies(
     excludeIds,
     offset = 0,
     curatedIds,
+    filter,
   }: {
     count?: number
     minRatings?: number
     excludeIds?: Set<number>
     offset?: number
     curatedIds?: number[]
+    filter?: DiscoveryFilter
   } = {},
 ): CatalogMovie[] {
   const ranked = rankedPopularity(catalog, minRatings)
 
-  if (curatedIds) {
+  if (curatedIds && !filter) {
     const byId = new Map(catalog.map((m) => [m.movieId, m]))
     const picked: CatalogMovie[] = []
     const seen = new Set<number>()
@@ -75,7 +78,11 @@ export function popularMovies(
     return picked.slice(0, count)
   }
 
-  const filtered = excludeIds ? ranked.filter((m) => !excludeIds.has(m.movieId)) : ranked
+  const filtered = ranked.filter((m) => {
+    if (excludeIds?.has(m.movieId)) return false
+    if (filter && !passesFilter(m, filter)) return false
+    return true
+  })
   if (filtered.length === 0) return []
 
   const pages = Math.max(1, Math.ceil(filtered.length / count))

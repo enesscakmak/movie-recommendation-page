@@ -14,6 +14,7 @@ export interface ProfileState {
 
 interface ProfileContextValue {
   profile: ProfileState | null
+  localProfile: ProfileState
   isLoading: boolean
   signOut: () => void
   rateMovie: (movieId: number, rating: number) => void
@@ -189,6 +190,7 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ProfileContextValue>(
     () => ({
       profile: status === "authenticated" ? (state ?? emptyState()) : null,
+      localProfile: state ?? emptyState(),
       isLoading: status === "loading" || (status === "authenticated" && state === null),
       signOut: () => void nextAuthSignOut(),
       rateMovie,

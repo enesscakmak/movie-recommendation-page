@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
-import { Loader2, RefreshCw, Star } from "lucide-react"
+import { Compass, Loader2, RefreshCw, Star } from "lucide-react"
 import MovieGrid from "@/components/movie-grid"
 import { FilterBar, EMPTY_FILTER_STATE, isFilterStateActive, type FilterState } from "@/components/discovery/filter-bar"
+import { RatingDeck } from "@/components/onboarding/rating-deck"
 import { MovieSearch } from "@/components/rating/movie-search"
 import { StarRating } from "@/components/rating/star-rating"
 import { Button } from "@/components/ui/button"
@@ -13,10 +14,13 @@ import { Progress } from "@/components/ui/progress"
 import { useProfile } from "@/contexts/profile-context"
 import {
   loadCatalog,
+  loadMeta,
   loadNeighborTable,
   popularMovies,
   recommend,
+  seedDeck,
   type CatalogMovie,
+  type DatasetMeta,
   type DiscoveryFilter,
   type ItemNeighbors,
   type Recommendation,
@@ -28,7 +32,7 @@ import {
 
 export default function Home() {
   const {
-    profile,
+    localProfile,
     isLoading: profileLoading,
     rateMovie,
     skipMovie,
@@ -39,15 +43,20 @@ export default function Home() {
   } = useProfile()
 
   const [catalog, setCatalog] = useState<CatalogMovie[] | null>(null)
+  const [meta, setMeta] = useState<DatasetMeta | null>(null)
   const [neighbors, setNeighbors] = useState<ItemNeighbors | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchSelected, setSearchSelected] = useState<CatalogMovie | null>(null)
   const [filterState, setFilterState] = useState<FilterState>(EMPTY_FILTER_STATE)
+  const [browseAll, setBrowseAll] = useState(false)
 
   useEffect(() => {
     loadCatalog()
       .then(setCatalog)
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load the catalogue."))
+    loadMeta()
+      .then(setMeta)
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -91,22 +100,21 @@ export default function Home() {
   }, [personalizing, neighbors])
 
   const userRatings = useMemo<UserRating[]>(() => {
-    if (!profile) return []
-    return Object.entries(profile.ratings).map(([movieId, rating]) => ({
+    return Object.entries(localProfile.ratings).map(([movieId, rating]) => ({
       movieId: Number(movieId),
       rating,
-      ratedAt: profile.ratedAt[movieId] ?? new Date(0).toISOString(),
+      ratedAt: localProfile.ratedAt[movieId] ?? new Date(0).toISOString(),
     }))
-  }, [profile])
+  }, [localProfile])
 
   const recs = useMemo<Recommendation[] | null>(() => {
     if (!catalog || !neighbors || !personalizing) return null
-    return recommend(userRatings, profile?.skipped ?? [], neighbors, catalog, {
+    return recommend(userRatings, localProfile.skipped, neighbors, catalog, {
       count: 12,
-      offset: profile?.recommendationOffset ?? 0,
+      offset: localProfile.recommendationOffset,
       filter: discoveryFilter,
     })
-  }, [catalog, neighbors, personalizing, userRatings, profile?.skipped, profile?.recommendationOffset, discoveryFilter])
+  }, [catalog, neighbors, personalizing, userRatings, localProfile.skipped, localProfile.recommendationOffset, discoveryFilter])
 
   const catalogById = useMemo(() => {
     const map = new Map<number, CatalogMovie>()
@@ -115,22 +123,25 @@ export default function Home() {
   }, [catalog])
 
   const excludeIds = useMemo(() => {
-    const ids = new Set<number>(profile?.skipped ?? [])
-    if (profile) {
-      Object.keys(profile.ratings).forEach((id) => ids.add(Number(id)))
-      profile.watchlist.forEach((id) => ids.add(id))
-    }
+    const ids = new Set<number>(localProfile.skipped)
+    Object.keys(localProfile.ratings).forEach((id) => ids.add(Number(id)))
+    localProfile.watchlist.forEach((id) => ids.add(id))
     return ids
-  }, [profile])
+  }, [localProfile])
 
-  const watchlistSet = useMemo(() => new Set(profile?.watchlist ?? []), [profile])
+  const watchlistSet = useMemo(() => new Set(localProfile.watchlist), [localProfile])
 
-  const ratedIds = useMemo(() => new Set(Object.keys(profile?.ratings ?? {}).map(Number)), [profile])
+  const ratedIds = useMemo(() => new Set(Object.keys(localProfile.ratings).map(Number)), [localProfile])
 
   const popular = useMemo(() => {
     if (!catalog || personalizing) return []
     return popularMovies(catalog, { count: 12, excludeIds, curatedIds: CURATED_HOME_IDS, filter: discoveryFilter })
   }, [catalog, personalizing, excludeIds, discoveryFilter])
+
+  const deckMovies = useMemo(() => {
+    if (!catalog || !meta) return null
+    return seedDeck(catalog, meta.discoverPool, excludeIds)
+  }, [catalog, meta])
 
   if (error) {
     return (
@@ -159,6 +170,41 @@ export default function Home() {
     }
   }
 
+  if (!personalizing && !browseAll) {
+    return (
+      <div className="container mx-auto px-4 py-10">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight">Rate a few movies</h1>
+          <p className="text-muted-foreground mt-1">
+            Quick picks to learn your taste ({ratingCount}/{MIN_RATINGS_FOR_CF} so far).
+          </p>
+        </div>
+
+        {ratingCount > 0 && (
+          <div className="mb-8 max-w-sm">
+            <Progress value={(ratingCount / MIN_RATINGS_FOR_CF) * 100} />
+          </div>
+        )}
+
+        {deckMovies ? (
+          <RatingDeck
+            movies={deckMovies}
+            ratingCount={ratingCount}
+            targetCount={MIN_RATINGS_FOR_CF}
+            ratings={localProfile.ratings}
+            onRate={(movieId, rating) => rateMovie(movieId, rating)}
+            onSkip={(movieId) => skipMovie(movieId)}
+            onBrowseAll={() => setBrowseAll(true)}
+          />
+        ) : (
+          <div className="flex items-center justify-center py-24">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="container mx-auto px-4 py-10">
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
@@ -178,12 +224,18 @@ export default function Home() {
             Refresh
           </Button>
         ) : (
-          <Button asChild>
-            <Link href="/rated">
-              <Star className="mr-2 h-4 w-4" />
-              Rated Movies
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" onClick={() => setBrowseAll(false)}>
+              <Compass className="mr-2 h-4 w-4" />
+              Quick start
+            </Button>
+            <Button asChild>
+              <Link href="/rated">
+                <Star className="mr-2 h-4 w-4" />
+                Rated Movies
+              </Link>
+            </Button>
+          </div>
         )}
       </div>
 
@@ -203,7 +255,7 @@ export default function Home() {
                 <div className="text-sm text-muted-foreground">{searchSelected.year}</div>
               </div>
               <StarRating
-                value={profile?.ratings[searchSelected.movieId] ?? 0}
+                value={localProfile.ratings[searchSelected.movieId] ?? 0}
                 onChange={(rating) => {
                   rateMovie(searchSelected.movieId, rating)
                   setSearchSelected(null)
@@ -238,7 +290,7 @@ export default function Home() {
       ) : (
         <MovieGrid
           movies={displayMovies}
-          ratings={profile?.ratings}
+          ratings={localProfile.ratings}
           because={becauseMap}
           watchlist={watchlistSet}
           onRate={(movieId, rating) => rateMovie(movieId, rating)}

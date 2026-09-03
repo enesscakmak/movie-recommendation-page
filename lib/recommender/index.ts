@@ -28,3 +28,4 @@ export {
 export { itemSimilarity, recommend, similarTo, hasUsableNeighbors, explain } from "./itemitem"
 export { popularMovies, CURATED_HOME_IDS } from "./popular"
 export { allGenres, allDecades, decadeOf, isFilterActive } from "./filters"
+export { seedDeck } from "./seed"
